@@ -2,9 +2,12 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import os
+import time
+from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Accurate RSI Scanner", layout="wide")
-st.title("🎯 Accurate 30-Min RSI Scanner")
+st.set_page_config(page_title="Live RSI Scanner", layout="wide")
+st.title("⚡ Turant Live RSI Scanner (30-Min)")
+st.write("Condition: RSI(22) Crossed Below 35 in Current Candle")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
@@ -24,29 +27,32 @@ def get_symbols():
             return [line.strip() for line in f.readlines() if line.strip()]
     return []
 
-if st.button("Start Accurate Scan 🚀", type="primary"):
+col1, col2 = st.columns([1, 2])
+with col1:
+    auto_run = st.toggle("🟢 Auto-Scan ON (Har 1 Min)")
+with col2:
+    manual_run = st.button("Turant Manual Scan 🚀")
+
+if auto_run or manual_run:
     symbols = get_symbols()
     
     if symbols:
-        # User ko message dikhana
-        st.write(f"Total {len(symbols)} stocks ka 1 mahine ka data fetch ho raha hai (Taaki accuracy Chartink jaisi aaye). Kripya wait karein...")
+        ist = timezone(timedelta(hours=5, minutes=30))
+        now = datetime.now(ist)
         
-        # Yahoo Finance ke liye ".NS" lagana
-        yf_symbols = [sym + ".NS" for sym in symbols]
+        st.write(f"⏳ Live checking {len(symbols)} stocks... Last Checked: **{now.strftime('%I:%M:%S %p')}**")
         
-        # BULK DOWNLOAD: Ek hi baar me saara data lana (Bina block hue)
         try:
+            yf_symbols = [sym + ".NS" for sym in symbols]
+            # Live latest candle data lane ke liye
             data = yf.download(yf_symbols, interval='30m', period='1mo', progress=False)
             matched_stocks = []
             
             if not data.empty and 'Close' in data:
                 closes = data['Close']
-                
                 for symbol in symbols:
                     yf_sym = symbol + ".NS"
-                    
                     try:
-                        # Har stock ka close price nikalna
                         if isinstance(closes, pd.Series):
                             stock_close = closes.dropna()
                         else:
@@ -57,31 +63,44 @@ if st.button("Start Accurate Scan 🚀", type="primary"):
                                 
                         if len(stock_close) > 22:
                             rsi_series = calculate_rsi(stock_close, window=22).dropna()
-                            
                             if len(rsi_series) >= 2:
+                                # curr_rsi = Abhi jo candle chal rahi hai (Live)
+                                # prev_rsi = Pichli candle jo close ho chuki hai
                                 curr_rsi = rsi_series.iloc[-1]
                                 prev_rsi = rsi_series.iloc[-2]
                                 
-                                # Setup: RSI 22 Crossed Below 35
+                                # Setup: Exact Cross Below 35 in Current Live Candle
                                 if prev_rsi >= 35 and curr_rsi < 35:
                                     matched_stocks.append({
                                         "Stock Symbol": symbol,
-                                        "Current RSI": round(curr_rsi, 2),
+                                        "Live RSI (22)": round(curr_rsi, 2),
                                         "TradingView Chart": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
                                     })
                     except Exception:
-                        pass # Agar kisi 1 stock me dikkat aaye toh skip kardo
+                        pass
                         
-            # Result dikhana
             if matched_stocks:
-                st.success(f"✅ Scan Complete! {len(matched_stocks)} stocks aapke setup me aaye hain:")
+                st.success(f"🚨 ALERT: In {len(matched_stocks)} stocks ne turant RSI 35 cross kiya hai!")
                 st.data_editor(
                     pd.DataFrame(matched_stocks),
                     column_config={"TradingView Chart": st.column_config.LinkColumn("Open in TradingView")},
                     hide_index=True
                 )
             else:
-                st.info("Abhi kisi bhi stock me RSI 35 ke niche cross nahi hua hai.")
+                st.info("Abhi current candle me kisi stock ne RSI 35 ko niche cross nahi kiya hai.")
                 
         except Exception as e:
-            st.error("Data laane me error aayi. Thodi der baad try karein.")
+            st.error("Data fetch error. Retrying in next cycle...")
+
+        # AUTO-REFRESH LOGIC (Har 1 Minute)
+        if auto_run:
+            is_weekday = now.weekday() < 5
+            market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+            market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+            
+            if is_weekday and market_open <= now <= market_close:
+                st.write("🔄 *Tracking Live Data... Next check 60 seconds me.*")
+                time.sleep(60) # Har 1 minute me refresh hoga
+                st.rerun()
+            else:
+                st.warning("⏸️ Market band hai. Auto-scan ruke ga taaki data block na ho.")
