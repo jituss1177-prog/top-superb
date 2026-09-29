@@ -2,15 +2,13 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import os
-import concurrent.futures
 
-# Page Setup
-st.set_page_config(page_title="Fast RSI Scanner", layout="wide")
-st.title("⚡ Superfast 30-Min RSI Scanner")
+st.set_page_config(page_title="Accurate RSI Scanner", layout="wide")
+st.title("🎯 Accurate 30-Min RSI Scanner")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
-# RSI Formula
+# RSI Exact Formula
 def calculate_rsi(series, window=22):
     delta = series.diff()
     gain = delta.where(delta > 0, 0)
@@ -26,60 +24,64 @@ def get_symbols():
             return [line.strip() for line in f.readlines() if line.strip()]
     return []
 
-# Har stock ko check karne ka logic
-def check_stock(symbol):
-    try:
-        yf_symbol = symbol + ".NS"
-        df = yf.download(yf_symbol, interval='30m', period='7d', progress=False)
-        
-        if len(df) > 22:
-            rsi_series = calculate_rsi(df['Close'], window=22).dropna()
-            
-            if len(rsi_series) >= 2:
-                curr_rsi = rsi_series.iloc[-1]
-                prev_rsi = rsi_series.iloc[-2]
-                
-                # Setup: RSI 22 Crossed Below 35
-                if prev_rsi >= 35 and curr_rsi < 35:
-                    return {
-                        "Stock Symbol": symbol,
-                        "Current RSI": round(curr_rsi, 2),
-                        "TradingView Chart": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
-                    }
-    except:
-        pass
-    return None
-
-# Scan Button
-if st.button("Start Fast Scan 🚀", type="primary"):
+if st.button("Start Accurate Scan 🚀", type="primary"):
     symbols = get_symbols()
     
     if symbols:
-        st.write(f"Scanning {len(symbols)} stocks at rocket speed... Kripya wait karein.")
-        progress_bar = st.progress(0)
+        # User ko message dikhana
+        st.write(f"Total {len(symbols)} stocks ka 1 mahine ka data fetch ho raha hai (Taaki accuracy Chartink jaisi aaye). Kripya wait karein...")
         
-        matched_stocks = []
-        completed = 0
+        # Yahoo Finance ke liye ".NS" lagana
+        yf_symbols = [sym + ".NS" for sym in symbols]
         
-        # Superfast Multi-threading (Ek sath 20 stocks check honge)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-            futures = {executor.submit(check_stock, sym): sym for sym in symbols}
+        # BULK DOWNLOAD: Ek hi baar me saara data lana (Bina block hue)
+        try:
+            data = yf.download(yf_symbols, interval='30m', period='1mo', progress=False)
+            matched_stocks = []
             
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result:
-                    matched_stocks.append(result)
+            if not data.empty and 'Close' in data:
+                closes = data['Close']
                 
-                completed += 1
-                progress_bar.progress(completed / len(symbols))
-        
-        # Result Dikhana
-        if matched_stocks:
-            st.success("✅ Scan Complete! Ye rahe aapke setup wale stocks:")
-            st.data_editor(
-                pd.DataFrame(matched_stocks),
-                column_config={"TradingView Chart": st.column_config.LinkColumn("Open in TradingView")},
-                hide_index=True
-            )
-        else:
-            st.info("Abhi kisi bhi stock me RSI 35 ke niche cross nahi hua hai.")
+                for symbol in symbols:
+                    yf_sym = symbol + ".NS"
+                    
+                    try:
+                        # Har stock ka close price nikalna
+                        if isinstance(closes, pd.Series):
+                            stock_close = closes.dropna()
+                        else:
+                            if yf_sym in closes.columns:
+                                stock_close = closes[yf_sym].dropna()
+                            else:
+                                continue
+                                
+                        if len(stock_close) > 22:
+                            rsi_series = calculate_rsi(stock_close, window=22).dropna()
+                            
+                            if len(rsi_series) >= 2:
+                                curr_rsi = rsi_series.iloc[-1]
+                                prev_rsi = rsi_series.iloc[-2]
+                                
+                                # Setup: RSI 22 Crossed Below 35
+                                if prev_rsi >= 35 and curr_rsi < 35:
+                                    matched_stocks.append({
+                                        "Stock Symbol": symbol,
+                                        "Current RSI": round(curr_rsi, 2),
+                                        "TradingView Chart": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                    })
+                    except Exception:
+                        pass # Agar kisi 1 stock me dikkat aaye toh skip kardo
+                        
+            # Result dikhana
+            if matched_stocks:
+                st.success(f"✅ Scan Complete! {len(matched_stocks)} stocks aapke setup me aaye hain:")
+                st.data_editor(
+                    pd.DataFrame(matched_stocks),
+                    column_config={"TradingView Chart": st.column_config.LinkColumn("Open in TradingView")},
+                    hide_index=True
+                )
+            else:
+                st.info("Abhi kisi bhi stock me RSI 35 ke niche cross nahi hua hai.")
+                
+        except Exception as e:
+            st.error("Data laane me error aayi. Thodi der baad try karein.")
