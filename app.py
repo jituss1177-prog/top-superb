@@ -5,9 +5,9 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Live RSI Scanner", layout="wide")
-st.title("⚡ Turant Live RSI Scanner (30-Min)")
-st.write("Condition: RSI(22) Crossed Below 35 in Current Candle")
+st.set_page_config(page_title="Smart RSI Scanner", layout="wide")
+st.title("🎯 Smart 30-Min RSI Scanner (Live + Post-Market)")
+st.write("**Condition:** 30-Min RSI(22) Crossed Below 35")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
@@ -27,24 +27,33 @@ def get_symbols():
             return [line.strip() for line in f.readlines() if line.strip()]
     return []
 
+# Market Status Check (Live ya Band)
+ist = timezone(timedelta(hours=5, minutes=30))
+now = datetime.now(ist)
+is_weekday = now.weekday() < 5
+market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+is_market_live = is_weekday and market_open <= now <= market_close
+
+if is_market_live:
+    st.success("🟢 **Market Live Hai.** App current forming candle ko track kar rahi hai.")
+else:
+    st.error(f"🔴 **Market Band Hai.** App aakhri closing time (3:30 PM) ka final data dikha rahi hai.")
+
 col1, col2 = st.columns([1, 2])
 with col1:
-    auto_run = st.toggle("🟢 Auto-Scan ON (Har 1 Min)")
+    auto_run = st.toggle("🤖 Auto-Scan ON (Har 1 Min)", disabled=not is_market_live, help="Market band hone par Auto-Scan kaam nahi karega.")
 with col2:
-    manual_run = st.button("Turant Manual Scan 🚀")
+    manual_run = st.button("Scan Now 🚀")
 
 if auto_run or manual_run:
     symbols = get_symbols()
     
     if symbols:
-        ist = timezone(timedelta(hours=5, minutes=30))
-        now = datetime.now(ist)
-        
-        st.write(f"⏳ Live checking {len(symbols)} stocks... Last Checked: **{now.strftime('%I:%M:%S %p')}**")
+        st.write(f"⏳ Fetching data for {len(symbols)} stocks... Last Checked: **{now.strftime('%I:%M:%S %p')}**")
         
         try:
             yf_symbols = [sym + ".NS" for sym in symbols]
-            # Live latest candle data lane ke liye
             data = yf.download(yf_symbols, interval='30m', period='1mo', progress=False)
             matched_stocks = []
             
@@ -64,43 +73,35 @@ if auto_run or manual_run:
                         if len(stock_close) > 22:
                             rsi_series = calculate_rsi(stock_close, window=22).dropna()
                             if len(rsi_series) >= 2:
-                                # curr_rsi = Abhi jo candle chal rahi hai (Live)
-                                # prev_rsi = Pichli candle jo close ho chuki hai
+                                # curr_rsi aakhri candle hai (Live me latest, Market band me 3:30 PM wali)
                                 curr_rsi = rsi_series.iloc[-1]
                                 prev_rsi = rsi_series.iloc[-2]
                                 
-                                # Setup: Exact Cross Below 35 in Current Live Candle
+                                # Setup: Exact Cross Below 35
                                 if prev_rsi >= 35 and curr_rsi < 35:
                                     matched_stocks.append({
                                         "Stock Symbol": symbol,
-                                        "Live RSI (22)": round(curr_rsi, 2),
+                                        "RSI (22)": round(curr_rsi, 2),
                                         "TradingView Chart": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
                                     })
                     except Exception:
                         pass
                         
             if matched_stocks:
-                st.success(f"🚨 ALERT: In {len(matched_stocks)} stocks ne turant RSI 35 cross kiya hai!")
+                st.success(f"✅ ALERT: {len(matched_stocks)} stocks me aapka setup ban chuka hai!")
                 st.data_editor(
                     pd.DataFrame(matched_stocks),
                     column_config={"TradingView Chart": st.column_config.LinkColumn("Open in TradingView")},
                     hide_index=True
                 )
             else:
-                st.info("Abhi current candle me kisi stock ne RSI 35 ko niche cross nahi kiya hai.")
+                st.info("Abhi kisi stock me RSI 35 ko niche cross nahi kiya hai.")
                 
         except Exception as e:
-            st.error("Data fetch error. Retrying in next cycle...")
+            st.error("Data fetch error. Kripya thodi der baad try karein.")
 
-        # AUTO-REFRESH LOGIC (Har 1 Minute)
-        if auto_run:
-            is_weekday = now.weekday() < 5
-            market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
-            market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
-            
-            if is_weekday and market_open <= now <= market_close:
-                st.write("🔄 *Tracking Live Data... Next check 60 seconds me.*")
-                time.sleep(60) # Har 1 minute me refresh hoga
-                st.rerun()
-            else:
-                st.warning("⏸️ Market band hai. Auto-scan ruke ga taaki data block na ho.")
+        # AUTO-REFRESH LOGIC (Sirf Live Market me chalega)
+        if auto_run and is_market_live:
+            st.write("🔄 *Tracking Live Data... Next check 60 seconds me.*")
+            time.sleep(60) 
+            st.rerun()
