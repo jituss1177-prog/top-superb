@@ -11,7 +11,6 @@ st.write("**Strategy:** 30-Min RSI < 35 **AUR** Price 90-Day Base Support ke paa
 
 file_path = "Trading_Symbols_Chartink.txt"
 
-# Exact RSI Formula
 def calculate_rsi(series, window=22):
     delta = series.diff()
     gain = delta.where(delta > 0, 0)
@@ -42,7 +41,7 @@ else:
 
 col1, col2 = st.columns([1, 2])
 with col1:
-    auto_run = st.toggle("🤖 Auto-Scan ON (Har 1 Min)", disabled=not is_market_live)
+    auto_run = st.toggle("🤖 Auto-Scan ON (Har 3 Min)", disabled=not is_market_live)
 with col2:
     manual_run = st.button("Scan Now 🚀")
 
@@ -55,10 +54,9 @@ if auto_run or manual_run:
         try:
             yf_symbols = [sym + ".NS" for sym in symbols]
             
-            # 1. RSI ke liye 30-min data (1 Mahina)
-            data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False)
-            # 2. Base Support ke liye Daily data (Pichle 3 Mahine / 90 Days)
-            data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False)
+            # FIX 1: 'threads=2' lagaya gaya hai taaki server crash ya hang na ho
+            data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=2)
+            data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=2)
             
             matched_stocks = []
             
@@ -69,13 +67,11 @@ if auto_run or manual_run:
                 for symbol in symbols:
                     yf_sym = symbol + ".NS"
                     try:
-                        # 30-min Close price fetch karna
                         if isinstance(closes_30m, pd.Series):
                             stock_close = closes_30m.dropna()
                         else:
                             stock_close = closes_30m[yf_sym].dropna() if yf_sym in closes_30m.columns else None
                             
-                        # Daily Low price fetch karna
                         if isinstance(lows_daily, pd.Series):
                             stock_low = lows_daily.dropna()
                         else:
@@ -83,7 +79,7 @@ if auto_run or manual_run:
                                 
                         if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
                             
-                            # Hanuman 90D Support (Aakhri din ki incomplete candle chhod kar pichle 90 din ka lowest low)
+                            # Hanuman 90D Support 
                             support_90d = stock_low[:-1].min()
                             
                             rsi_series = calculate_rsi(stock_close, window=22).dropna()
@@ -92,10 +88,9 @@ if auto_run or manual_run:
                                 curr_rsi = rsi_series.iloc[-1]
                                 curr_close = stock_close.iloc[-1]
                                 
-                                # Distance calculation: Support se kitna upar khada hai price?
                                 dist_pct = ((curr_close - support_90d) / support_90d) * 100
                                 
-                                # 🎯 THE BRAHMAASTRA SETUP: RSI < 35 AUR Price Support ke 0% se 3.5% ki range me ho
+                                # THE BRAHMAASTRA SETUP
                                 if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
                                     matched_stocks.append({
                                         "Stock": symbol,
@@ -121,8 +116,8 @@ if auto_run or manual_run:
         except Exception as e:
             st.error("Data processing me error aayi. Kripya thodi der baad try karein.")
 
-        # AUTO-REFRESH (Har 1 Minute)
+        # FIX 2: Refresh time 180 seconds (3 minutes) kar diya gaya hai server ki stability ke liye
         if auto_run and is_market_live:
-            st.write("🔄 *Next scan 60 seconds me hoga...*")
-            time.sleep(60) 
+            st.write("🔄 *Next scan 3 minute me hoga...*")
+            time.sleep(180) 
             st.rerun()
