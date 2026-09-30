@@ -41,7 +41,8 @@ else:
 
 col1, col2 = st.columns([1, 2])
 with col1:
-    auto_run = st.toggle("🤖 Auto-Scan ON (Har 3 Min)", disabled=not is_market_live)
+    # 15 Minute Toggle update
+    auto_run = st.toggle("🤖 Auto-Scan ON (Har 15 Min)", disabled=not is_market_live)
 with col2:
     manual_run = st.button("Scan Now 🚀")
 
@@ -54,7 +55,6 @@ if auto_run or manual_run:
         try:
             yf_symbols = [sym + ".NS" for sym in symbols]
             
-            # FIX 1: 'threads=2' lagaya gaya hai taaki server crash ya hang na ho
             data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=2)
             data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=2)
             
@@ -79,9 +79,7 @@ if auto_run or manual_run:
                                 
                         if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
                             
-                            # Hanuman 90D Support 
                             support_90d = stock_low[:-1].min()
-                            
                             rsi_series = calculate_rsi(stock_close, window=22).dropna()
                             
                             if len(rsi_series) >= 2 and support_90d > 0:
@@ -90,7 +88,6 @@ if auto_run or manual_run:
                                 
                                 dist_pct = ((curr_close - support_90d) / support_90d) * 100
                                 
-                                # THE BRAHMAASTRA SETUP
                                 if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
                                     matched_stocks.append({
                                         "Stock": symbol,
@@ -116,8 +113,8 @@ if auto_run or manual_run:
         except Exception as e:
             st.error("Data processing me error aayi. Kripya thodi der baad try karein.")
 
-        # FIX 2: Refresh time 180 seconds (3 minutes) kar diya gaya hai server ki stability ke liye
+        # 15 MINUTE (900 SECONDS) AUTO-REFRESH
         if auto_run and is_market_live:
-            st.write("🔄 *Next scan 3 minute me hoga...*")
-            time.sleep(180) 
+            st.write("🔄 *Next scan 15 minute me hoga...*")
+            time.sleep(900) 
             st.rerun()
