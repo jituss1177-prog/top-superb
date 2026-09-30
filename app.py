@@ -41,7 +41,6 @@ else:
 
 col1, col2 = st.columns([1, 2])
 with col1:
-    # 15 Minute Toggle update
     auto_run = st.toggle("🤖 Auto-Scan ON (Har 15 Min)", disabled=not is_market_live)
 with col2:
     manual_run = st.button("Scan Now 🚀")
@@ -55,8 +54,9 @@ if auto_run or manual_run:
         try:
             yf_symbols = [sym + ".NS" for sym in symbols]
             
-            data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=2)
-            data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=2)
+            # FIX: threads=False kar diya hai taaki server crash na ho. Ye 100% safe hai.
+            data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
+            data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=False)
             
             matched_stocks = []
             
@@ -113,7 +113,6 @@ if auto_run or manual_run:
         except Exception as e:
             st.error("Data processing me error aayi. Kripya thodi der baad try karein.")
 
-        # 15 MINUTE (900 SECONDS) AUTO-REFRESH
         if auto_run and is_market_live:
             st.write("🔄 *Next scan 15 minute me hoga...*")
             time.sleep(900) 
