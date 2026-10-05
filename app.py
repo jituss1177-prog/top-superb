@@ -6,8 +6,10 @@ import time
 from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="Brahmaastra Scanner", layout="wide")
-st.title("🏹 Brahmaastra: RSI 35 + 90D Support Bounce")
-st.write("**Strategy:** 30-Min RSI < 35 **AUR** Price 90-Day Base Support ke paas (0-3% range me) ho.")
+
+# UI text ko generic kar diya gaya hai
+st.title("🏹 Brahmaastra Scanner")
+st.write("**System Status:** Active & Scanning Premium Setups...")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
@@ -26,7 +28,6 @@ def get_symbols():
             return [line.strip() for line in f.readlines() if line.strip()]
     return []
 
-# Market Status Check
 ist = timezone(timedelta(hours=5, minutes=30))
 now = datetime.now(ist)
 is_weekday = now.weekday() < 5
@@ -35,9 +36,9 @@ market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
 is_market_live = is_weekday and market_open <= now <= market_close
 
 if is_market_live:
-    st.success("🟢 **Market Live:** Current forming candle par entry setup dhoondh raha hai.")
+    st.success("🟢 **Market Live:** System Running.")
 else:
-    st.error("🔴 **Market Band:** Aakhri closing (3:30 PM) ka setup dikha raha hai.")
+    st.error("🔴 **Market Band:** Showing last closing data.")
 
 col1, col2 = st.columns([1, 2])
 with col1:
@@ -49,14 +50,13 @@ if auto_run or manual_run:
     symbols = get_symbols()
     
     if symbols:
-        st.write(f"⏳ Scanning {len(symbols)} stocks... Last Checked: **{now.strftime('%I:%M:%S %p')}**")
+        st.write(f"⏳ Processing {len(symbols)} items... Last Checked: **{now.strftime('%I:%M:%S %p')}**")
         
-        # UI Elements for Loading
         progress_bar = st.progress(0)
         status_text = st.empty()
         
         matched_stocks = []
-        chunk_size = 50  # 50-50 stocks ka batch
+        chunk_size = 50
         total_chunks = (len(symbols) // chunk_size) + (1 if len(symbols) % chunk_size != 0 else 0)
         
         for i in range(0, len(symbols), chunk_size):
@@ -64,8 +64,7 @@ if auto_run or manual_run:
             yf_symbols = [sym + ".NS" for sym in chunk_syms]
             current_chunk = (i // chunk_size) + 1
             
-            # Update text on screen
-            status_text.markdown(f"**Fetching Data: Batch {current_chunk} out of {total_chunks}... Kripya wait karein.**")
+            status_text.markdown(f"**Fetching Data: Batch {current_chunk} out of {total_chunks}...**")
             
             try:
                 data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
@@ -99,13 +98,14 @@ if auto_run or manual_run:
                                     
                                     dist_pct = ((curr_close - support_90d) / support_90d) * 100
                                     
+                                    # Setup logic secret hai, kisi ko show nahi hoga
                                     if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
                                         matched_stocks.append({
                                             "Stock": symbol,
-                                            "RSI (22)": round(curr_rsi, 2),
+                                            "Metric A": round(curr_rsi, 2),        # RSI ka naam chupa diya
                                             "Current Price": round(curr_close, 2),
-                                            "90D Support": round(support_90d, 2),
-                                            "Distance": f"{round(dist_pct, 2)}% uper",
+                                            "Key Level": round(support_90d, 2),    # Support ka naam chupa diya
+                                            "Zone %": f"{round(dist_pct, 2)}%",    # Distance ka naam chupa diya
                                             "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
                                         })
                         except Exception:
@@ -113,21 +113,22 @@ if auto_run or manual_run:
             except Exception as e:
                 pass
             
-            # Update visual progress bar
             current_progress = min((i + chunk_size) / len(symbols), 1.0)
             progress_bar.progress(current_progress)
         
         status_text.markdown("**✅ Scan Complete!**")
         
         if matched_stocks:
-            st.success(f"🔥 LIMIT ORDER READY: {len(matched_stocks)} stocks bilkul aapke Support zone par aa chuke hain!")
+            # Success message bhi secret kar diya gaya hai
+            st.success(f"🔥 ALERT: {len(matched_stocks)} stocks me aapka setup active hai!")
             st.data_editor(
                 pd.DataFrame(matched_stocks),
                 column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
                 hide_index=True
             )
         else:
-            st.info("Abhi koi bhi stock RSI 35 + Support Bounce wale perfect setup me nahi hai.")
+            # Info message generic banaya
+            st.info("Abhi koi bhi stock aapke criteria se match nahi kar raha hai.")
             
         if auto_run and is_market_live:
             st.write("🔄 *Next scan 15 minute me hoga...*")
