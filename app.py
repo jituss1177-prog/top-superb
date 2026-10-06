@@ -5,8 +5,9 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="System", layout="wide")
-st.title("Scanner")
+# Tab aur Main Title me naam aur icon update kar diya gaya hai
+st.set_page_config(page_title="Brahmaastra Support", layout="wide")
+st.title("🏹 Brahmaastra Support")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
