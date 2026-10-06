@@ -5,14 +5,12 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Brahmaastra Scanner", layout="wide")
-
-# UI text ko generic kar diya gaya hai
-st.title("🏹 Brahmaastra Scanner")
-st.write("**System Status:** Active & Scanning Premium Setups...")
+st.set_page_config(page_title="System", layout="wide")
+st.title("Scanner")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
+# Engine (Hidden Logic)
 def calculate_rsi(series, window=22):
     delta = series.diff()
     gain = delta.where(delta > 0, 0)
@@ -35,36 +33,28 @@ market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
 market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
 is_market_live = is_weekday and market_open <= now <= market_close
 
-if is_market_live:
-    st.success("🟢 **Market Live:** System Running.")
-else:
-    st.error("🔴 **Market Band:** Showing last closing data.")
-
 col1, col2 = st.columns([1, 2])
 with col1:
-    auto_run = st.toggle("🤖 Auto-Scan ON (Har 15 Min)", disabled=not is_market_live)
+    auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
 with col2:
-    manual_run = st.button("Scan Now 🚀")
+    manual_run = st.button("Scan")
 
 if auto_run or manual_run:
     symbols = get_symbols()
     
     if symbols:
-        st.write(f"⏳ Processing {len(symbols)} items... Last Checked: **{now.strftime('%I:%M:%S %p')}**")
-        
+        # Minimal Loading UI
         progress_bar = st.progress(0)
         status_text = st.empty()
         
         matched_stocks = []
         chunk_size = 50
-        total_chunks = (len(symbols) // chunk_size) + (1 if len(symbols) % chunk_size != 0 else 0)
         
         for i in range(0, len(symbols), chunk_size):
             chunk_syms = symbols[i:i+chunk_size]
             yf_symbols = [sym + ".NS" for sym in chunk_syms]
-            current_chunk = (i // chunk_size) + 1
             
-            status_text.markdown(f"**Fetching Data: Batch {current_chunk} out of {total_chunks}...**")
+            status_text.markdown("Loading...")
             
             try:
                 data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
@@ -95,17 +85,13 @@ if auto_run or manual_run:
                                 if len(rsi_series) >= 2 and support_90d > 0:
                                     curr_rsi = rsi_series.iloc[-1]
                                     curr_close = stock_close.iloc[-1]
-                                    
                                     dist_pct = ((curr_close - support_90d) / support_90d) * 100
                                     
-                                    # Setup logic secret hai, kisi ko show nahi hoga
+                                    # Setup check karega, par data screen par nahi bhejega
                                     if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
                                         matched_stocks.append({
                                             "Stock": symbol,
-                                            "Metric A": round(curr_rsi, 2),        # RSI ka naam chupa diya
                                             "Current Price": round(curr_close, 2),
-                                            "Key Level": round(support_90d, 2),    # Support ka naam chupa diya
-                                            "Zone %": f"{round(dist_pct, 2)}%",    # Distance ka naam chupa diya
                                             "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
                                         })
                         except Exception:
@@ -116,21 +102,20 @@ if auto_run or manual_run:
             current_progress = min((i + chunk_size) / len(symbols), 1.0)
             progress_bar.progress(current_progress)
         
-        status_text.markdown("**✅ Scan Complete!**")
+        # Scan complete hone par loading bar gayab ho jayega
+        status_text.empty()
+        progress_bar.empty()
         
         if matched_stocks:
-            # Success message bhi secret kar diya gaya hai
-            st.success(f"🔥 ALERT: {len(matched_stocks)} stocks me aapka setup active hai!")
+            # Table me sirf 3 column aayenge
             st.data_editor(
                 pd.DataFrame(matched_stocks),
                 column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
                 hide_index=True
             )
         else:
-            # Info message generic banaya
-            st.info("Abhi koi bhi stock aapke criteria se match nahi kar raha hai.")
+            st.write("No results.")
             
         if auto_run and is_market_live:
-            st.write("🔄 *Next scan 15 minute me hoga...*")
             time.sleep(900) 
             st.rerun()
