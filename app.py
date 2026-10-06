@@ -149,5 +149,24 @@ with tab2:
                     if ex_div_unix:
                         ex_date = datetime.fromtimestamp(ex_div_unix).date()
                         
-                        # Sirf aane wale 30 dino ka filter
-                        if today_date <= ex_date <= (
+                        # Sirf aane wale 30 dino ka filter (Yahan par apka bracket miss hua tha)
+                        if today_date <= ex_date <= (today_date + timedelta(days=30)):
+                            days_left = (ex_date - today_date).days
+                            div_matched.append({
+                                "Stock": symbol,
+                                "Ex-Dividend Date": ex_date.strftime("%d %b %Y"),
+                                "Days Left": f"{days_left} Days"
+                            })
+                except:
+                    pass
+                
+                # Progress bar update
+                prog_bar_div.progress((i + 1) / len(symbols))
+                
+            prog_bar_div.empty()
+            
+            if div_matched:
+                st.success("✅ Ye stocks jald hi dividend dene wale hain:")
+                st.dataframe(pd.DataFrame(div_matched), hide_index=True)
+            else:
+                st.info("Abhi current list me aane wale mahine ke liye koi dividend stock nahi hai.")
