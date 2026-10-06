@@ -33,7 +33,7 @@ market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
 is_market_live = is_weekday and market_open <= now <= market_close
 
 # --- TABS CREATION ---
-tab1, tab2 = st.tabs(["🏹 Scanner", "💰 Dividend Tracker"])
+tab1, tab2 = st.tabs(["🏹 Scanner", "💰 Tracker"])
 
 # ==========================================
 # TAB 1: MAIN SECRET SCANNER
@@ -125,16 +125,16 @@ with tab1:
 
 
 # ==========================================
-# TAB 2: SEPARATE DIVIDEND SCANNER
+# TAB 2: SEPARATE DIVIDEND SCANNER (Now fully Secret)
 # ==========================================
 with tab2:
-    st.title("💰 Upcoming Dividends")
-    st.write("Aaj ki date se aane wale 30 dino ke andar dividend dene wale stocks ki list.")
+    st.title("💰 Tracker")
     
-    if st.button("Check Dividends"):
+    if st.button("Check"):
         symbols = get_symbols()
         if symbols:
-            st.write("Dividend data check ho raha hai... (Isme 1-2 minute lag sakte hain)")
+            status_text_div = st.empty()
+            status_text_div.markdown("Processing...")
             prog_bar_div = st.progress(0)
             
             div_matched = []
@@ -149,24 +149,22 @@ with tab2:
                     if ex_div_unix:
                         ex_date = datetime.fromtimestamp(ex_div_unix).date()
                         
-                        # Sirf aane wale 30 dino ka filter (Yahan par apka bracket miss hua tha)
                         if today_date <= ex_date <= (today_date + timedelta(days=30)):
                             days_left = (ex_date - today_date).days
                             div_matched.append({
                                 "Stock": symbol,
-                                "Ex-Dividend Date": ex_date.strftime("%d %b %Y"),
-                                "Days Left": f"{days_left} Days"
+                                "Date": ex_date.strftime("%d %b %Y"),
+                                "Timeline": f"{days_left} Days"
                             })
                 except:
                     pass
                 
-                # Progress bar update
                 prog_bar_div.progress((i + 1) / len(symbols))
                 
             prog_bar_div.empty()
+            status_text_div.empty()
             
             if div_matched:
-                st.success("✅ Ye stocks jald hi dividend dene wale hain:")
                 st.dataframe(pd.DataFrame(div_matched), hide_index=True)
             else:
-                st.info("Abhi current list me aane wale mahine ke liye koi dividend stock nahi hai.")
+                st.write("No results.")
