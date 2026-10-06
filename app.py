@@ -5,8 +5,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Brahmaastra Support", layout="wide")
-st.title("🏹 Brahmaastra Support")
+st.set_page_config(page_title="System", layout="wide")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
@@ -33,102 +32,122 @@ market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
 market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
 is_market_live = is_weekday and market_open <= now <= market_close
 
-col1, col2 = st.columns([1, 2])
-with col1:
-    auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
-with col2:
-    manual_run = st.button("Scan")
+# --- TABS CREATION ---
+tab1, tab2 = st.tabs(["🏹 Scanner", "💰 Dividend Tracker"])
 
-if auto_run or manual_run:
-    symbols = get_symbols()
-    
-    if symbols:
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+# ==========================================
+# TAB 1: MAIN SECRET SCANNER
+# ==========================================
+with tab1:
+    st.title("Scanner")
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
+    with col2:
+        manual_run = st.button("Scan")
+
+    if auto_run or manual_run:
+        symbols = get_symbols()
         
-        matched_stocks = []
-        chunk_size = 50
-        
-        for i in range(0, len(symbols), chunk_size):
-            chunk_syms = symbols[i:i+chunk_size]
-            yf_symbols = [sym + ".NS" for sym in chunk_syms]
+        if symbols:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
             
-            status_text.markdown("Loading...")
+            matched_stocks = []
+            chunk_size = 50
             
-            try:
-                data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
-                data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=False)
+            for i in range(0, len(symbols), chunk_size):
+                chunk_syms = symbols[i:i+chunk_size]
+                yf_symbols = [sym + ".NS" for sym in chunk_syms]
                 
-                if not data_30m.empty and not data_daily.empty:
-                    closes_30m = data_30m['Close']
-                    lows_daily = data_daily['Low']
+                status_text.markdown("Loading...")
+                
+                try:
+                    data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
+                    data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=False)
                     
-                    for symbol in chunk_syms:
-                        yf_sym = symbol + ".NS"
-                        try:
-                            if isinstance(closes_30m, pd.Series):
-                                stock_close = closes_30m.dropna()
-                            else:
-                                stock_close = closes_30m[yf_sym].dropna() if yf_sym in closes_30m.columns else None
-                                
-                            if isinstance(lows_daily, pd.Series):
-                                stock_low = lows_daily.dropna()
-                            else:
-                                stock_low = lows_daily[yf_sym].dropna() if yf_sym in lows_daily.columns else None
+                    if not data_30m.empty and not data_daily.empty:
+                        closes_30m = data_30m['Close']
+                        lows_daily = data_daily['Low']
+                        
+                        for symbol in chunk_syms:
+                            yf_sym = symbol + ".NS"
+                            try:
+                                if isinstance(closes_30m, pd.Series):
+                                    stock_close = closes_30m.dropna()
+                                else:
+                                    stock_close = closes_30m[yf_sym].dropna() if yf_sym in closes_30m.columns else None
                                     
-                            if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
-                                
-                                support_90d = stock_low[:-1].min()
-                                rsi_series = calculate_rsi(stock_close, window=22).dropna()
-                                
-                                if len(rsi_series) >= 2 and support_90d > 0:
-                                    curr_rsi = rsi_series.iloc[-1]
-                                    curr_close = stock_close.iloc[-1]
-                                    dist_pct = ((curr_close - support_90d) / support_90d) * 100
-                                    
-                                    if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
+                                if isinstance(lows_daily, pd.Series):
+                                    stock_low = lows_daily.dropna()
+                                else:
+                                    stock_low = lows_daily[yf_sym].dropna() if yf_sym in lows_daily.columns else None
                                         
-                                        # 🎯 NEW: DIVIDEND CHECK ENGINE (2-7 Days)
-                                        event_status = "-"
-                                        try:
-                                            ticker = yf.Ticker(yf_sym)
-                                            ex_div_unix = ticker.info.get('exDividendDate')
-                                            if ex_div_unix:
-                                                ex_date = datetime.fromtimestamp(ex_div_unix)
-                                                days_left = (ex_date.date() - datetime.now().date()).days
-                                                
-                                                # Check if dividend is between 2 to 7 days
-                                                if 2 <= days_left <= 7:
-                                                    event_status = f"Yes ({days_left} Days)"
-                                        except:
-                                            pass
-                                            
-                                        matched_stocks.append({
-                                            "Stock": symbol,
-                                            "Current Price": round(curr_close, 2),
-                                            "Special Event": event_status,  # Secret name for Dividend
-                                            "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
-                                        })
-                        except Exception:
-                            pass
-            except Exception as e:
-                pass
+                                if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
+                                    
+                                    support_90d = stock_low[:-1].min()
+                                    rsi_series = calculate_rsi(stock_close, window=22).dropna()
+                                    
+                                    if len(rsi_series) >= 2 and support_90d > 0:
+                                        curr_rsi = rsi_series.iloc[-1]
+                                        curr_close = stock_close.iloc[-1]
+                                        dist_pct = ((curr_close - support_90d) / support_90d) * 100
+                                        
+                                        if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
+                                            matched_stocks.append({
+                                                "Stock": symbol,
+                                                "Current Price": round(curr_close, 2),
+                                                "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                            })
+                            except Exception:
+                                pass
+                except Exception as e:
+                    pass
+                
+                current_progress = min((i + chunk_size) / len(symbols), 1.0)
+                progress_bar.progress(current_progress)
             
-            current_progress = min((i + chunk_size) / len(symbols), 1.0)
-            progress_bar.progress(current_progress)
-        
-        status_text.empty()
-        progress_bar.empty()
-        
-        if matched_stocks:
-            st.data_editor(
-                pd.DataFrame(matched_stocks),
-                column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
-                hide_index=True
-            )
-        else:
-            st.write("No results.")
+            status_text.empty()
+            progress_bar.empty()
             
-        if auto_run and is_market_live:
-            time.sleep(900) 
-            st.rerun()
+            if matched_stocks:
+                st.data_editor(
+                    pd.DataFrame(matched_stocks),
+                    column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
+                    hide_index=True
+                )
+            else:
+                st.write("No results.")
+                
+            if auto_run and is_market_live:
+                time.sleep(900) 
+                st.rerun()
+
+
+# ==========================================
+# TAB 2: SEPARATE DIVIDEND SCANNER
+# ==========================================
+with tab2:
+    st.title("💰 Upcoming Dividends")
+    st.write("Aaj ki date se aane wale 30 dino ke andar dividend dene wale stocks ki list.")
+    
+    if st.button("Check Dividends"):
+        symbols = get_symbols()
+        if symbols:
+            st.write("Dividend data check ho raha hai... (Isme 1-2 minute lag sakte hain)")
+            prog_bar_div = st.progress(0)
+            
+            div_matched = []
+            today_date = now.date()
+            
+            for i, symbol in enumerate(symbols):
+                try:
+                    yf_sym = symbol + ".NS"
+                    ticker = yf.Ticker(yf_sym)
+                    ex_div_unix = ticker.info.get('exDividendDate')
+                    
+                    if ex_div_unix:
+                        ex_date = datetime.fromtimestamp(ex_div_unix).date()
+                        
+                        # Sirf aane wale 30 dino ka filter
+                        if today_date <= ex_date <= (
