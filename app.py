@@ -5,7 +5,7 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="System", layout="wide")
+st.set_page_config(page_title="Brahmaastra", layout="wide")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
@@ -33,18 +33,18 @@ market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
 is_market_live = is_weekday and market_open <= now <= market_close
 
 # --- TABS CREATION ---
-tab1, tab2 = st.tabs(["🏹 Scanner", "💰 Tracker"])
+tab1, tab2 = st.tabs(["🏹 Brahmaastra Scanner", "💰 Dividend Tracker"])
 
 # ==========================================
 # TAB 1: MAIN SECRET SCANNER
 # ==========================================
 with tab1:
-    st.title("Scanner")
+    st.title("🏹 Brahmaastra Scanner")
     col1, col2 = st.columns([1, 2])
     with col1:
         auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
     with col2:
-        manual_run = st.button("Scan")
+        manual_run = st.button("Scan Now 🚀")
 
     if auto_run or manual_run:
         symbols = get_symbols()
@@ -125,12 +125,12 @@ with tab1:
 
 
 # ==========================================
-# TAB 2: SEPARATE DIVIDEND SCANNER (Now fully Secret)
+# TAB 2: SEPARATE DIVIDEND SCANNER
 # ==========================================
 with tab2:
-    st.title("💰 Tracker")
+    st.title("💰 Dividend Tracker")
     
-    if st.button("Check"):
+    if st.button("Check Dividends"):
         symbols = get_symbols()
         if symbols:
             status_text_div = st.empty()
@@ -153,8 +153,8 @@ with tab2:
                             days_left = (ex_date - today_date).days
                             div_matched.append({
                                 "Stock": symbol,
-                                "Date": ex_date.strftime("%d %b %Y"),
-                                "Timeline": f"{days_left} Days"
+                                "Dividend Date": ex_date.strftime("%d %b %Y"),
+                                "Timeline": f"{days_left} Days Left"
                             })
                 except:
                     pass
@@ -167,4 +167,4 @@ with tab2:
             if div_matched:
                 st.dataframe(pd.DataFrame(div_matched), hide_index=True)
             else:
-                st.write("No results.")
+                st.write("No upcoming dividends found.")
