@@ -5,7 +5,6 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-# Tab aur Main Title me naam aur icon update kar diya gaya hai
 st.set_page_config(page_title="Brahmaastra Support", layout="wide")
 st.title("🏹 Brahmaastra Support")
 
@@ -44,7 +43,6 @@ if auto_run or manual_run:
     symbols = get_symbols()
     
     if symbols:
-        # Minimal Loading UI
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -88,11 +86,27 @@ if auto_run or manual_run:
                                     curr_close = stock_close.iloc[-1]
                                     dist_pct = ((curr_close - support_90d) / support_90d) * 100
                                     
-                                    # Setup check karega, par data screen par nahi bhejega
                                     if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
+                                        
+                                        # 🎯 NEW: DIVIDEND CHECK ENGINE (2-7 Days)
+                                        event_status = "-"
+                                        try:
+                                            ticker = yf.Ticker(yf_sym)
+                                            ex_div_unix = ticker.info.get('exDividendDate')
+                                            if ex_div_unix:
+                                                ex_date = datetime.fromtimestamp(ex_div_unix)
+                                                days_left = (ex_date.date() - datetime.now().date()).days
+                                                
+                                                # Check if dividend is between 2 to 7 days
+                                                if 2 <= days_left <= 7:
+                                                    event_status = f"Yes ({days_left} Days)"
+                                        except:
+                                            pass
+                                            
                                         matched_stocks.append({
                                             "Stock": symbol,
                                             "Current Price": round(curr_close, 2),
+                                            "Special Event": event_status,  # Secret name for Dividend
                                             "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
                                         })
                         except Exception:
@@ -103,12 +117,10 @@ if auto_run or manual_run:
             current_progress = min((i + chunk_size) / len(symbols), 1.0)
             progress_bar.progress(current_progress)
         
-        # Scan complete hone par loading bar gayab ho jayega
         status_text.empty()
         progress_bar.empty()
         
         if matched_stocks:
-            # Table me sirf 3 column aayenge
             st.data_editor(
                 pd.DataFrame(matched_stocks),
                 column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
