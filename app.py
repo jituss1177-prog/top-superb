@@ -5,11 +5,11 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-st.set_page_config(page_title="Brahmaastra", layout="wide")
+st.set_page_config(page_title="Brahmaastra Terminal", layout="wide")
 
 file_path = "Trading_Symbols_Chartink.txt"
 
-# Engine (Hidden Logic)
+# Engine (Hidden Logic for Support Scanner)
 def calculate_rsi(series, window=22):
     delta = series.diff()
     gain = delta.where(delta > 0, 0)
@@ -33,18 +33,117 @@ market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
 is_market_live = is_weekday and market_open <= now <= market_close
 
 # --- TABS CREATION ---
-tab1, tab2 = st.tabs(["🏹 Brahmaastra Scanner", "💰 Dividend Tracker"])
+tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner", "💰 Dividend Tracker"])
 
 # ==========================================
-# TAB 1: MAIN SECRET SCANNER
+# TAB 1: 5-MIN VCP INTRADAY SCANNER
 # ==========================================
 with tab1:
-    st.title("🏹 Brahmaastra Scanner")
+    st.title("📊 5-Min Volume Contraction")
+    st.caption("Best trading time: 9:30 AM to 11:00 AM IST. Din me sirf ek trade valid hoga.")
+    
+    col_bull, col_bear = st.columns(2)
+    with col_bull:
+        st.subheader("🟢 Top Bullish Setups")
+    with col_bear:
+        st.subheader("🔴 Top Bearish Setups")
+        
+    if st.button("Start 5-Min Scan 🚀"):
+        symbols = get_symbols()
+        if symbols:
+            status = st.empty()
+            status.info("Scanning 5-Min Data... (Isme thoda time lag sakta hai)")
+            prog_bar_vcp = st.progress(0)
+            
+            bullish_list = []
+            bearish_list = []
+            
+            chunk_size = 40
+            for i in range(0, len(symbols), chunk_size):
+                chunk_syms = symbols[i:i+chunk_size]
+                yf_symbols = [sym + ".NS" for sym in chunk_syms]
+                
+                try:
+                    data_5m = yf.download(yf_symbols, interval='5m', period='1d', progress=False, threads=False)
+                    
+                    if not data_5m.empty:
+                        closes = data_5m['Close']
+                        opens = data_5m['Open']
+                        volumes = data_5m['Volume']
+                        highs = data_5m['High']
+                        lows = data_5m['Low']
+                        
+                        for symbol in chunk_syms:
+                            yf_sym = symbol + ".NS"
+                            try:
+                                if isinstance(closes, pd.Series):
+                                    stk_c, stk_o, stk_v = closes.dropna(), opens.dropna(), volumes.dropna()
+                                    stk_h, stk_l = highs.dropna(), lows.dropna()
+                                else:
+                                    if yf_sym in closes.columns:
+                                        stk_c = closes[yf_sym].dropna()
+                                        stk_o = opens[yf_sym].dropna()
+                                        stk_v = volumes[yf_sym].dropna()
+                                        stk_h = highs[yf_sym].dropna()
+                                        stk_l = lows[yf_sym].dropna()
+                                    else:
+                                        continue
+                                        
+                                if len(stk_c) >= 3:
+                                    day_open = stk_o.iloc[0] 
+                                    c1, o1, v1 = stk_c.iloc[-1], stk_o.iloc[-1], stk_v.iloc[-1]
+                                    c2, o2, v2 = stk_c.iloc[-2], stk_o.iloc[-2], stk_v.iloc[-2]
+                                    h1, l1 = stk_h.iloc[-1], stk_l.iloc[-1]
+                                    
+                                    # Bullish Setup
+                                    if c1 > day_open:
+                                        if (c2 < o2) and (c1 < o1) and (v1 < v2):
+                                            bullish_list.append({
+                                                "Stock": symbol,
+                                                "Buy >": round(h1, 2),
+                                                "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                            })
+                                            
+                                    # Bearish Setup
+                                    if c1 < day_open:
+                                        if (c2 > o2) and (c1 > o1) and (v1 < v2):
+                                            bearish_list.append({
+                                                "Stock": symbol,
+                                                "Sell <": round(l1, 2),
+                                                "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                            })
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                    
+                prog_bar_vcp.progress(min((i + chunk_size) / len(symbols), 1.0))
+            
+            status.empty()
+            prog_bar_vcp.empty()
+            
+            with col_bull:
+                if bullish_list:
+                    st.dataframe(pd.DataFrame(bullish_list).head(5), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                else:
+                    st.write("No Bullish setups.")
+                    
+            with col_bear:
+                if bearish_list:
+                    st.dataframe(pd.DataFrame(bearish_list).head(5), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                else:
+                    st.write("No Bearish setups.")
+
+# ==========================================
+# TAB 2: MAIN SECRET SCANNER (90D Support)
+# ==========================================
+with tab2:
+    st.title("🏹 90D Support Scanner")
     col1, col2 = st.columns([1, 2])
     with col1:
         auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
     with col2:
-        manual_run = st.button("Scan Now 🚀")
+        manual_run = st.button("Scan Now 🎯")
 
     if auto_run or manual_run:
         symbols = get_symbols()
@@ -123,11 +222,10 @@ with tab1:
                 time.sleep(900) 
                 st.rerun()
 
-
 # ==========================================
-# TAB 2: SEPARATE DIVIDEND SCANNER
+# TAB 3: SEPARATE DIVIDEND SCANNER
 # ==========================================
-with tab2:
+with tab3:
     st.title("💰 Dividend Tracker")
     
     if st.button("Check Dividends"):
