@@ -36,27 +36,25 @@ is_market_live = is_weekday and market_open <= now <= market_close
 tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner", "💰 Dividend Tracker"])
 
 # ==========================================
-# TAB 1: 5-MIN VCP INTRADAY SCANNER
+# TAB 1: 5-MIN TOP MOVERS (Bullish / Bearish)
 # ==========================================
 with tab1:
     st.title("📊 5-Min Volume Contraction")
-    st.caption("Best trading time: 9:30 AM to 11:00 AM IST. Din me sirf ek trade valid hoga.")
     
     col_bull, col_bear = st.columns(2)
     with col_bull:
-        st.subheader("🟢 Top Bullish Setups")
+        st.subheader("🟢 Top Bullish")
     with col_bear:
-        st.subheader("🔴 Top Bearish Setups")
+        st.subheader("🔴 Top Bearish")
         
     if st.button("Start 5-Min Scan 🚀"):
         symbols = get_symbols()
         if symbols:
             status = st.empty()
-            status.info("Scanning 5-Min Data... (Isme thoda time lag sakta hai)")
+            status.info("Scanning Data... (Please wait)")
             prog_bar_vcp = st.progress(0)
             
-            bullish_list = []
-            bearish_list = []
+            movers_list = []
             
             chunk_size = 40
             for i in range(0, len(symbols), chunk_size):
@@ -69,49 +67,33 @@ with tab1:
                     if not data_5m.empty:
                         closes = data_5m['Close']
                         opens = data_5m['Open']
-                        volumes = data_5m['Volume']
-                        highs = data_5m['High']
-                        lows = data_5m['Low']
                         
                         for symbol in chunk_syms:
                             yf_sym = symbol + ".NS"
                             try:
                                 if isinstance(closes, pd.Series):
-                                    stk_c, stk_o, stk_v = closes.dropna(), opens.dropna(), volumes.dropna()
-                                    stk_h, stk_l = highs.dropna(), lows.dropna()
+                                    stk_c, stk_o = closes.dropna(), opens.dropna()
                                 else:
                                     if yf_sym in closes.columns:
                                         stk_c = closes[yf_sym].dropna()
                                         stk_o = opens[yf_sym].dropna()
-                                        stk_v = volumes[yf_sym].dropna()
-                                        stk_h = highs[yf_sym].dropna()
-                                        stk_l = lows[yf_sym].dropna()
                                     else:
                                         continue
                                         
-                                if len(stk_c) >= 3:
+                                if len(stk_c) >= 1:
+                                    # Din ki pehli candle ka open price aur abhi ka price
                                     day_open = stk_o.iloc[0] 
-                                    c1, o1, v1 = stk_c.iloc[-1], stk_o.iloc[-1], stk_v.iloc[-1]
-                                    c2, o2, v2 = stk_c.iloc[-2], stk_o.iloc[-2], stk_v.iloc[-2]
-                                    h1, l1 = stk_h.iloc[-1], stk_l.iloc[-1]
+                                    curr_close = stk_c.iloc[-1]
                                     
-                                    # Bullish Setup
-                                    if c1 > day_open:
-                                        if (c2 < o2) and (c1 < o1) and (v1 < v2):
-                                            bullish_list.append({
-                                                "Stock": symbol,
-                                                "Buy >": round(h1, 2),
-                                                "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
-                                            })
-                                            
-                                    # Bearish Setup
-                                    if c1 < day_open:
-                                        if (c2 > o2) and (c1 > o1) and (v1 < v2):
-                                            bearish_list.append({
-                                                "Stock": symbol,
-                                                "Sell <": round(l1, 2),
-                                                "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
-                                            })
+                                    # Percentage change calculation
+                                    pct_change = ((curr_close - day_open) / day_open) * 100
+                                    
+                                    movers_list.append({
+                                        "Stock": symbol,
+                                        "Price": round(curr_close, 2),
+                                        "Change": pct_change,
+                                        "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                    })
                             except Exception:
                                 pass
                 except Exception:
@@ -122,17 +104,35 @@ with tab1:
             status.empty()
             prog_bar_vcp.empty()
             
-            with col_bull:
-                if bullish_list:
-                    st.dataframe(pd.DataFrame(bullish_list).head(5), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
-                else:
-                    st.write("No Bullish setups.")
-                    
-            with col_bear:
-                if bearish_list:
-                    st.dataframe(pd.DataFrame(bearish_list).head(5), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
-                else:
-                    st.write("No Bearish setups.")
+            # Top 5 Sorting Logic
+            if movers_list:
+                # Sabse zyada badhne wale stocks (Descending sort)
+                movers_list.sort(key=lambda x: x['Change'], reverse=True)
+                
+                bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:5]
+                
+                # Sabse zyada girne wale stocks
+                bearish_list = [s.copy() for s in movers_list if s['Change'] < 0]
+                bearish_list.sort(key=lambda x: x['Change']) # Negative me sort (sabse bada minus pehle)
+                bearish_list = bearish_list[:5]
+                
+                # Screen par dikhane ke liye format karna
+                for b in bullish_list:
+                    b['Change'] = f"+{b['Change']:.2f}%"
+                for b in bearish_list:
+                    b['Change'] = f"{b['Change']:.2f}%"
+                
+                with col_bull:
+                    if bullish_list:
+                        st.dataframe(pd.DataFrame(bullish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                    else:
+                        st.write("No Bullish stocks found today.")
+                        
+                with col_bear:
+                    if bearish_list:
+                        st.dataframe(pd.DataFrame(bearish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                    else:
+                        st.write("No Bearish stocks found today.")
 
 # ==========================================
 # TAB 2: MAIN SECRET SCANNER (90D Support)
