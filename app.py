@@ -36,16 +36,16 @@ is_market_live = is_weekday and market_open <= now <= market_close
 tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner", "💰 Dividend Tracker"])
 
 # ==========================================
-# TAB 1: 5-MIN TOP MOVERS (Bullish / Bearish)
+# TAB 1: 5-MIN TOP MOVERS (Top 10 Bullish / Bearish)
 # ==========================================
 with tab1:
     st.title("📊 5-Min Volume Contraction")
     
     col_bull, col_bear = st.columns(2)
     with col_bull:
-        st.subheader("🟢 Top Bullish")
+        st.subheader("🟢 Top 10 Bullish")
     with col_bear:
-        st.subheader("🔴 Top Bearish")
+        st.subheader("🔴 Top 10 Bearish")
         
     if st.button("Start 5-Min Scan 🚀"):
         symbols = get_symbols()
@@ -81,11 +81,9 @@ with tab1:
                                         continue
                                         
                                 if len(stk_c) >= 1:
-                                    # Din ki pehli candle ka open price aur abhi ka price
                                     day_open = stk_o.iloc[0] 
                                     curr_close = stk_c.iloc[-1]
                                     
-                                    # Percentage change calculation
                                     pct_change = ((curr_close - day_open) / day_open) * 100
                                     
                                     movers_list.append({
@@ -104,19 +102,15 @@ with tab1:
             status.empty()
             prog_bar_vcp.empty()
             
-            # Top 5 Sorting Logic
+            # Top 10 Sorting Logic
             if movers_list:
-                # Sabse zyada badhne wale stocks (Descending sort)
                 movers_list.sort(key=lambda x: x['Change'], reverse=True)
+                bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:10]
                 
-                bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:5]
-                
-                # Sabse zyada girne wale stocks
                 bearish_list = [s.copy() for s in movers_list if s['Change'] < 0]
-                bearish_list.sort(key=lambda x: x['Change']) # Negative me sort (sabse bada minus pehle)
-                bearish_list = bearish_list[:5]
+                bearish_list.sort(key=lambda x: x['Change']) 
+                bearish_list = bearish_list[:10]
                 
-                # Screen par dikhane ke liye format karna
                 for b in bullish_list:
                     b['Change'] = f"+{b['Change']:.2f}%"
                 for b in bearish_list:
