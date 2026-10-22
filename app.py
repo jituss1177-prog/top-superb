@@ -36,14 +36,16 @@ is_market_live = is_weekday and market_open <= now <= market_close
 tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner", "💰 Dividend Tracker"])
 
 # ==========================================
-# TAB 1: 5-MIN TOP MOVERS (Top 10 Bullish / Bearish)
+# TAB 1: 5-MIN TOP MOVERS (3 Columns)
 # ==========================================
 with tab1:
     st.title("📊 5-Min Volume Contraction")
     
-    col_bull, col_bear = st.columns(2)
+    col_bull, col_sweet, col_bear = st.columns(3)
     with col_bull:
         st.subheader("🟢 Top 10 Bullish")
+    with col_sweet:
+        st.subheader("🎯 Sweet Spot (1%-2.5%)")
     with col_bear:
         st.subheader("🔴 Top 10 Bearish")
         
@@ -102,16 +104,24 @@ with tab1:
             status.empty()
             prog_bar_vcp.empty()
             
-            # Top 10 Sorting Logic
+            # Top 10 Sorting Logic for 3 Columns
             if movers_list:
                 movers_list.sort(key=lambda x: x['Change'], reverse=True)
+                
+                # Column 1: Sabse zyada bhagne wale (Top 10 Overall)
                 bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:10]
                 
+                # Column 2: Sweet Spot (Sirf 1.0% se 2.5% ke beech)
+                sweet_list = [s.copy() for s in movers_list if 1.0 <= s['Change'] <= 2.5][:10]
+                
+                # Column 3: Sabse zyada girne wale
                 bearish_list = [s.copy() for s in movers_list if s['Change'] < 0]
                 bearish_list.sort(key=lambda x: x['Change']) 
                 bearish_list = bearish_list[:10]
                 
                 for b in bullish_list:
+                    b['Change'] = f"+{b['Change']:.2f}%"
+                for b in sweet_list:
                     b['Change'] = f"+{b['Change']:.2f}%"
                 for b in bearish_list:
                     b['Change'] = f"{b['Change']:.2f}%"
@@ -121,6 +131,12 @@ with tab1:
                         st.dataframe(pd.DataFrame(bullish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
                     else:
                         st.write("No Bullish stocks found today.")
+                        
+                with col_sweet:
+                    if sweet_list:
+                        st.dataframe(pd.DataFrame(sweet_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                    else:
+                        st.write("No stocks in 1-2% range.")
                         
                 with col_bear:
                     if bearish_list:
