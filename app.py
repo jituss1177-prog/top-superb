@@ -1,204 +1,278 @@
-import os
-import pandas as pd
 import streamlit as st
 import yfinance as yf
+import pandas as pd
+import os
+import time
+from datetime import datetime, timedelta, timezone
 
+st.set_page_config(page_title="Brahmaastra Terminal", layout="wide")
 
-# Custom RSI formula
-def compute_rsi(series, period=14):
+file_path = "Trading_Symbols_Chartink.txt"
+
+# Engine (Hidden Logic for Support Scanner)
+def calculate_rsi(series, window=22):
     delta = series.diff()
-    gain = delta.where(delta > 0, 0).ewm(alpha=1 / period, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1 / period, adjust=False).mean()
-    rs = gain / loss
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.ewm(alpha=1/window, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/window, adjust=False).mean()
+    rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
+def get_symbols():
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return [line.strip() for line in f.readlines() if line.strip()]
+    return []
 
-# Website ki Setting (Poori tarah se Stealth)
-st.set_page_config(page_title="Smart Money", page_icon="🎯", layout="wide")
-st.title("🎯 Smart Money")
+ist = timezone(timedelta(hours=5, minutes=30))
+now = datetime.now(ist)
+is_weekday = now.weekday() < 5
+market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
+is_market_live = is_weekday and market_open <= now <= market_close
 
-# 2 Tabs create kiye
-tab1, tab2 = st.tabs(["List Scan", "Manual Check"])
+# --- TABS CREATION ---
+tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner", "💰 Dividend Tracker"])
 
-# ---------------- TAB 1: AUTO SCANNER (Last 5 Days) ----------------
+# ==========================================
+# TAB 1: 5-MIN TOP MOVERS (3 Columns)
+# ==========================================
 with tab1:
-    if st.button("Run Scan 🚀"):
-        file_path = "Trading_Symbols_Chartink.txt"
-        stocks = []
-
-        if os.path.exists(file_path):
-            with open(file_path, "r") as f:
-                stocks = [
-                    line.strip() + ".NS" for line in f.readlines() if line.strip()
-                ]
-        else:
-            st.error("Trading_Symbols_Chartink.txt file nahi mili.")
-
-        if stocks:
-            with st.spinner("Processing list... please wait."):
-                results = []
-                progress_bar = st.progress(0)
-
-                for i, stock in enumerate(stocks):
-                    progress_bar.progress((i + 1) / len(stocks))
-
-                    try:
-                        data = yf.download(stock, period="120d", progress=False)
-                        if isinstance(data.columns, pd.MultiIndex):
-                            data.columns = data.columns.get_level_values(0)
-
-                        if len(data) >= 90:
-                            data["RSI"] = compute_rsi(data["Close"], 14)
-
-                            # CHANGE: RSI Crossed Below 35 Logic
-                            latest_rsi = float(data["RSI"].iloc[-1])
-                            prev_rsi = float(data["RSI"].iloc[-2])
-
-                            # Filter 1: Kal RSI 35 ke upar tha, aur aaj 35 ya usse niche aaya hai (Fresh Cross)
-                            if prev_rsi > 35 and latest_rsi <= 35:
-                                data["Avg_Vol_20"] = (
-                                    data["Volume"].rolling(window=20).mean()
-                                )
-
-                                last_5_days = data.tail(5)
-                                accumulation_found = False
-                                entry_date = ""
-
-                                # Filter 2: Stealth Accumulation (Absorption) in Last 5 Days
-                                for date, row in last_5_days.iterrows():
-                                    open_p = float(row["Open"])
-                                    close_p = float(row["Close"])
-                                    high_p = float(row["High"])
-                                    low_p = float(row["Low"])
-
-                                    body = abs(open_p - close_p)
-                                    lower_wick = min(open_p, close_p) - low_p
-                                    total_range = high_p - low_p
-
-                                    # Absorption Logic
-                                    if (
-                                        total_range > 0
-                                        and lower_wick > body
-                                        and (lower_wick / total_range) >= 0.4
-                                    ):
-                                        accumulation_found = True
-                                        entry_date = date.strftime("%d %b %Y")
-                                        break
-
-                                if accumulation_found:
-                                    symbol_clean = stock.replace(".NS", "")
-                                    tv_link = f"https://in.tradingview.com/chart/?symbol=NSE:{symbol_clean}"
-                                    current_close = float(data["Close"].iloc[-1])
-
-                                    results.append(
-                                        {
-                                            "Stock": symbol_clean,
-                                            "Entry Date": entry_date,
-                                            "Current Price": round(
-                                                current_close, 2
-                                            ),
-                                            "RSI": round(latest_rsi, 2),
-                                            "Open in TradingView": tv_link,
-                                        }
-                                    )
-                    except Exception as e:
-                        pass
-
-                progress_bar.empty()
-
-                if len(results) > 0:
-                    df = pd.DataFrame(results)
-                    st.dataframe(
-                        df,
-                        column_config={
-                            "Open in TradingView": st.column_config.LinkColumn(
-                                "Open in TradingView",
-                                display_text="View Chart 📈",
-                            )
-                        },
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                else:
-                    st.info(
-                        "Koi fresh RSI < 35 breakdown aur recent accumulation nahi mili."
-                    )
-
-# ---------------- TAB 2: MANUAL CHECK (Last 5 Days) ----------------
-with tab2:
-    user_input = st.text_input("Stock Name (e.g. INFY, HDFCBANK)", "")
-
-    if st.button("Check Stock 🕵️‍♂️"):
-        if user_input.strip() == "":
-            st.warning("Pehle kisi stock ka naam likhein.")
-        else:
-            with st.spinner("Analyzing recent activity..."):
+    st.title("📊 5-Min Volume Contraction")
+    
+    col_bull, col_sweet, col_bear = st.columns(3)
+    with col_bull:
+        st.subheader("🟢 Top 10 Bullish")
+    with col_sweet:
+        st.subheader("🎯 Sweet Spot (1%-2.5%)")
+    with col_bear:
+        st.subheader("🔴 Top 10 Bearish")
+        
+    if st.button("Start 5-Min Scan 🚀"):
+        symbols = get_symbols()
+        if symbols:
+            status = st.empty()
+            status.info("Scanning Data... (Please wait)")
+            prog_bar_vcp = st.progress(0)
+            
+            movers_list = []
+            
+            chunk_size = 40
+            for i in range(0, len(symbols), chunk_size):
+                chunk_syms = symbols[i:i+chunk_size]
+                yf_symbols = [sym + ".NS" for sym in chunk_syms]
+                
                 try:
-                    stock_name = user_input.strip().upper()
-                    if not stock_name.endswith(".NS"):
-                        stock_name += ".NS"
-
-                    data = yf.download(stock_name, period="30d", progress=False)
-                    if isinstance(data.columns, pd.MultiIndex):
-                        data.columns = data.columns.get_level_values(0)
-
-                    if len(data) >= 20:
-                        data["Avg_Vol_20"] = (
-                            data["Volume"].rolling(window=20).mean()
-                        )
-
-                        last_5_days = data.tail(5)
-                        activity = []
-
-                        for date, row in last_5_days.iterrows():
-                            open_p = float(row["Open"])
-                            close_p = float(row["Close"])
-                            high_p = float(row["High"])
-                            low_p = float(row["Low"])
-                            vol = float(row["Volume"])
-                            avg_vol = float(row["Avg_Vol_20"])
-
-                            body = abs(open_p - close_p)
-                            lower_wick = min(open_p, close_p) - low_p
-                            total_range = high_p - low_p
-                            vol_spike = vol / avg_vol if avg_vol > 0 else 0
-                            is_green = close_p > open_p
-
-                            setup = ""
-
-                            if (
-                                total_range > 0
-                                and lower_wick > body
-                                and (lower_wick / total_range) >= 0.4
-                            ):
-                                setup = "Absorption (Stealth) 🟢"
-                            elif is_green and vol_spike >= 1.5:
-                                setup = "Aggressive Buy 🚀"
-
-                            if setup != "":
-                                activity.append(
-                                    {
-                                        "Date": date.strftime("%d %b %Y"),
-                                        "Setup Type": setup,
-                                        "Closing Price": round(close_p, 2),
-                                        "Volume Spike": f"{round(vol_spike, 1)}x",
-                                    }
-                                )
-
-                        if len(activity) > 0:
-                            st.success(
-                                f"Activity Found for {stock_name.replace('.NS', '')}"
-                            )
-                            st.dataframe(
-                                pd.DataFrame(activity),
-                                use_container_width=True,
-                                hide_index=True,
-                            )
-                        else:
-                            st.info(
-                                f"Pichle 5 dino mein koi special activity nahi mili."
-                            )
+                    data_5m = yf.download(yf_symbols, interval='5m', period='1d', progress=False, threads=False)
+                    
+                    if not data_5m.empty:
+                        closes = data_5m['Close']
+                        opens = data_5m['Open']
+                        
+                        for symbol in chunk_syms:
+                            yf_sym = symbol + ".NS"
+                            try:
+                                if isinstance(closes, pd.Series):
+                                    stk_c, stk_o = closes.dropna(), opens.dropna()
+                                else:
+                                    if yf_sym in closes.columns:
+                                        stk_c = closes[yf_sym].dropna()
+                                        stk_o = opens[yf_sym].dropna()
+                                    else:
+                                        continue
+                                        
+                                if len(stk_c) >= 1:
+                                    day_open = stk_o.iloc[0] 
+                                    curr_close = stk_c.iloc[-1]
+                                    
+                                    pct_change = ((curr_close - day_open) / day_open) * 100
+                                    
+                                    movers_list.append({
+                                        "Stock": symbol,
+                                        "Price": round(curr_close, 2),
+                                        "Change": pct_change,
+                                        "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                    })
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+                    
+                prog_bar_vcp.progress(min((i + chunk_size) / len(symbols), 1.0))
+            
+            status.empty()
+            prog_bar_vcp.empty()
+            
+            # Top 10 Sorting Logic for 3 Columns
+            if movers_list:
+                movers_list.sort(key=lambda x: x['Change'], reverse=True)
+                
+                # Column 1: Sabse zyada bhagne wale (Top 10 Overall)
+                bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:10]
+                
+                # Column 2: Sweet Spot (Sirf 1.0% se 2.5% ke beech)
+                sweet_list = [s.copy() for s in movers_list if 1.0 <= s['Change'] <= 2.5][:10]
+                
+                # Column 3: Sabse zyada girne wale
+                bearish_list = [s.copy() for s in movers_list if s['Change'] < 0]
+                bearish_list.sort(key=lambda x: x['Change']) 
+                bearish_list = bearish_list[:10]
+                
+                for b in bullish_list:
+                    b['Change'] = f"+{b['Change']:.2f}%"
+                for b in sweet_list:
+                    b['Change'] = f"+{b['Change']:.2f}%"
+                for b in bearish_list:
+                    b['Change'] = f"{b['Change']:.2f}%"
+                
+                with col_bull:
+                    if bullish_list:
+                        st.dataframe(pd.DataFrame(bullish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
                     else:
-                        st.error("Data nahi mila. Sahi naam type karein.")
+                        st.write("No Bullish stocks found today.")
+                        
+                with col_sweet:
+                    if sweet_list:
+                        st.dataframe(pd.DataFrame(sweet_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                    else:
+                        st.write("No stocks in 1-2% range.")
+                        
+                with col_bear:
+                    if bearish_list:
+                        st.dataframe(pd.DataFrame(bearish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
+                    else:
+                        st.write("No Bearish stocks found today.")
+
+# ==========================================
+# TAB 2: MAIN SECRET SCANNER (90D Support)
+# ==========================================
+with tab2:
+    st.title("🏹 90D Support Scanner")
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
+    with col2:
+        manual_run = st.button("Scan Now 🎯")
+
+    if auto_run or manual_run:
+        symbols = get_symbols()
+        
+        if symbols:
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            matched_stocks = []
+            chunk_size = 50
+            
+            for i in range(0, len(symbols), chunk_size):
+                chunk_syms = symbols[i:i+chunk_size]
+                yf_symbols = [sym + ".NS" for sym in chunk_syms]
+                
+                status_text.markdown("Loading...")
+                
+                try:
+                    data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
+                    data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=False)
+                    
+                    if not data_30m.empty and not data_daily.empty:
+                        closes_30m = data_30m['Close']
+                        lows_daily = data_daily['Low']
+                        
+                        for symbol in chunk_syms:
+                            yf_sym = symbol + ".NS"
+                            try:
+                                if isinstance(closes_30m, pd.Series):
+                                    stock_close = closes_30m.dropna()
+                                else:
+                                    stock_close = closes_30m[yf_sym].dropna() if yf_sym in closes_30m.columns else None
+                                    
+                                if isinstance(lows_daily, pd.Series):
+                                    stock_low = lows_daily.dropna()
+                                else:
+                                    stock_low = lows_daily[yf_sym].dropna() if yf_sym in lows_daily.columns else None
+                                        
+                                if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
+                                    
+                                    support_90d = stock_low[:-1].min()
+                                    rsi_series = calculate_rsi(stock_close, window=22).dropna()
+                                    
+                                    if len(rsi_series) >= 2 and support_90d > 0:
+                                        curr_rsi = rsi_series.iloc[-1]
+                                        curr_close = stock_close.iloc[-1]
+                                        dist_pct = ((curr_close - support_90d) / support_90d) * 100
+                                        
+                                        if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
+                                            matched_stocks.append({
+                                                "Stock": symbol,
+                                                "Current Price": round(curr_close, 2),
+                                                "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
+                                            })
+                            except Exception:
+                                pass
                 except Exception as e:
-                    st.error("Kuch technical error aaya. Sahi naam check karein.")
+                    pass
+                
+                current_progress = min((i + chunk_size) / len(symbols), 1.0)
+                progress_bar.progress(current_progress)
+            
+            status_text.empty()
+            progress_bar.empty()
+            
+            if matched_stocks:
+                st.data_editor(
+                    pd.DataFrame(matched_stocks),
+                    column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
+                    hide_index=True
+                )
+            else:
+                st.write("No results.")
+                
+            if auto_run and is_market_live:
+                time.sleep(900) 
+                st.rerun()
+
+# ==========================================
+# TAB 3: SEPARATE DIVIDEND SCANNER
+# ==========================================
+with tab3:
+    st.title("💰 Dividend Tracker")
+    
+    if st.button("Check Dividends"):
+        symbols = get_symbols()
+        if symbols:
+            status_text_div = st.empty()
+            status_text_div.markdown("Processing...")
+            prog_bar_div = st.progress(0)
+            
+            div_matched = []
+            today_date = now.date()
+            
+            for i, symbol in enumerate(symbols):
+                try:
+                    yf_sym = symbol + ".NS"
+                    ticker = yf.Ticker(yf_sym)
+                    ex_div_unix = ticker.info.get('exDividendDate')
+                    
+                    if ex_div_unix:
+                        ex_date = datetime.fromtimestamp(ex_div_unix).date()
+                        
+                        if today_date <= ex_date <= (today_date + timedelta(days=30)):
+                            days_left = (ex_date - today_date).days
+                            div_matched.append({
+                                "Stock": symbol,
+                                "Dividend Date": ex_date.strftime("%d %b %Y"),
+                                "Timeline": f"{days_left} Days Left"
+                            })
+                except:
+                    pass
+                
+                prog_bar_div.progress((i + 1) / len(symbols))
+                
+            prog_bar_div.empty()
+            status_text_div.empty()
+            
+            if div_matched:
+                st.dataframe(pd.DataFrame(div_matched), hide_index=True)
+            else:
+                st.write("No upcoming dividends found.")
