@@ -1,114 +1,204 @@
-//@version=6
-strategy("Brahmaastra VCP + 90D S&R", overlay=true, max_lines_count=100, max_labels_count=100, initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1)
-
-// ==========================================
-// ⚙️ VCP SETTINGS 
-// ==========================================
-target_points = input.float(30.0, title="🎯 VCP Target Points (Rs)")
-sl_buffer     = input.float(2.0, title="🛑 VCP SL Buffer (Rs)")
-
-// ==========================================
-// 🚀 VCP 5-MIN INTRADAY ENGINE
-// ==========================================
-// Time Filter
-h = hour(time, "Asia/Kolkata")
-m = minute(time, "Asia/Kolkata")
-current_time = h * 100 + m
-in_session = (current_time >= 930) and (current_time <= 1100)
-
-// Daily Reset & Trade Counter
-var float vcp_day_open = na
-var int trades_today = 0
-
-if session.isfirstbar_regular
-    vcp_day_open := open
-    trades_today := 0
-
-if strategy.position_size != 0 and strategy.position_size[1] == 0
-    trades_today += 1
-
-can_trade = (trades_today == 0) and (strategy.position_size == 0)
-
-// Trend & Candle Logic
-vcp_bull_trend = close > vcp_day_open
-vcp_bear_trend = close < vcp_day_open
-
-vcp_red = close < open
-vcp_green = close > open
-
-bull_setup = vcp_bull_trend and vcp_red and vcp_red[1] and (volume < volume[1]) and in_session and can_trade
-bear_setup = vcp_bear_trend and vcp_green and vcp_green[1] and (volume < volume[1]) and in_session and can_trade
-
-var float ep = na
-var float sl = na
-var float tp = na
-
-if bull_setup
-    ep := high
-    sl := low - sl_buffer
-    tp := ep + target_points
-    strategy.entry("Buy", strategy.long, stop=ep)
-    strategy.exit("Exit Buy", "Buy", stop=sl, limit=tp)
-
-if bear_setup
-    ep := low
-    sl := high + sl_buffer
-    tp := ep - target_points
-    strategy.entry("Sell", strategy.short, stop=ep)
-    strategy.exit("Exit Sell", "Sell", stop=sl, limit=tp)
-
-if not in_session and strategy.position_size == 0
-    strategy.cancel_all()
-
-plotshape(bull_setup, title="VCP Bullish Entry", text="BUY", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small)
-plotshape(bear_setup, title="VCP Bearish Entry", text="SELL", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small)
+import os
+import pandas as pd
+import streamlit as st
+import yfinance as yf
 
 
-// ==========================================
-// 🧱 90-DAY SUPPORT & RESISTANCE ENGINE
-// ==========================================
-// Daily time frame par pichle 90 din ka High aur Low nikalna
-get_90d_snr() =>
-    res = ta.highest(high[1], 90)
-    sup = ta.lowest(low[1], 90)
-    [res, sup]
-
-[res_90d, sup_90d] = request.security(syminfo.tickerid, "D", get_90d_snr(), lookahead = barmerge.lookahead_off)
-
-// Chart par S&R Lines aur Labels plot karna
-var line line_res = na
-var line line_sup = na
-var label lbl_res = na
-var label lbl_sup = na
-
-if barstate.islast
-    if not na(line_res)
-        line.delete(line_res)
-    if not na(lbl_res)
-        label.delete(lbl_res)
-        
-    line_res := line.new(bar_index - 1, res_90d, bar_index, res_90d, color=color.rgb(239, 83, 80), width=2, style=line.style_solid, extend=extend.both)
-    lbl_res  := label.new(bar_index + 4, res_90d, "90D RESISTANCE: " + str.tostring(res_90d, "#.##"), color=color.rgb(239, 83, 80), textcolor=color.white, style=label.style_label_left, size=size.small)
-
-    if not na(line_sup)
-        line.delete(line_sup)
-    if not na(lbl_sup)
-        label.delete(lbl_sup)
-        
-    line_sup := line.new(bar_index - 1, sup_90d, bar_index, sup_90d, color=color.rgb(38, 166, 154), width=2, style=line.style_solid, extend=extend.both)
-    lbl_sup  := label.new(bar_index + 4, sup_90d, "90D SUPPORT: " + str.tostring(sup_90d, "#.##"), color=color.rgb(38, 166, 154), textcolor=color.white, style=label.style_label_left, size=size.small)
+# Custom RSI formula
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0).ewm(alpha=1 / period, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1 / period, adjust=False).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
 
 
-// ==========================================
-// 📊 SMALL P/L TABLE (Neat & Clean)
-// ==========================================
-var table pl_table = table.new(position.top_right, 2, 4, border_width=1, border_color=color.gray)
-if barstate.islast
-    table.cell(pl_table, 0, 0, "VCP Strategy", bgcolor=color.blue, text_color=color.white)
-    table.cell(pl_table, 1, 0, "Stats", bgcolor=color.blue, text_color=color.white)
-    
-    table.cell(pl_table, 0, 1, "Target Set", bgcolor=color.gray, text_color=color.white)
-    table.cell(pl_table, 1, 1, str.tostring(target_points) + " Pts", bgcolor=color.black, text_color=color.white)
-    
-    table.cell(pl_table, 0, 2, "Net Profit (₹)", bgcolor=color.gray, text_color=color.white)
-    table.cell(pl_table, 1, 2, str.tostring(strategy.netprofit, "#.##"), bgcolor=strategy.netprofit > 0 ? color.green : color.red, text_color=color.white)
+# Website ki Setting (Poori tarah se Stealth)
+st.set_page_config(page_title="Smart Money", page_icon="🎯", layout="wide")
+st.title("🎯 Smart Money")
+
+# 2 Tabs create kiye
+tab1, tab2 = st.tabs(["List Scan", "Manual Check"])
+
+# ---------------- TAB 1: AUTO SCANNER (Last 5 Days) ----------------
+with tab1:
+    if st.button("Run Scan 🚀"):
+        file_path = "Trading_Symbols_Chartink.txt"
+        stocks = []
+
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                stocks = [
+                    line.strip() + ".NS" for line in f.readlines() if line.strip()
+                ]
+        else:
+            st.error("Trading_Symbols_Chartink.txt file nahi mili.")
+
+        if stocks:
+            with st.spinner("Processing list... please wait."):
+                results = []
+                progress_bar = st.progress(0)
+
+                for i, stock in enumerate(stocks):
+                    progress_bar.progress((i + 1) / len(stocks))
+
+                    try:
+                        data = yf.download(stock, period="120d", progress=False)
+                        if isinstance(data.columns, pd.MultiIndex):
+                            data.columns = data.columns.get_level_values(0)
+
+                        if len(data) >= 90:
+                            data["RSI"] = compute_rsi(data["Close"], 14)
+
+                            # CHANGE: RSI Crossed Below 35 Logic
+                            latest_rsi = float(data["RSI"].iloc[-1])
+                            prev_rsi = float(data["RSI"].iloc[-2])
+
+                            # Filter 1: Kal RSI 35 ke upar tha, aur aaj 35 ya usse niche aaya hai (Fresh Cross)
+                            if prev_rsi > 35 and latest_rsi <= 35:
+                                data["Avg_Vol_20"] = (
+                                    data["Volume"].rolling(window=20).mean()
+                                )
+
+                                last_5_days = data.tail(5)
+                                accumulation_found = False
+                                entry_date = ""
+
+                                # Filter 2: Stealth Accumulation (Absorption) in Last 5 Days
+                                for date, row in last_5_days.iterrows():
+                                    open_p = float(row["Open"])
+                                    close_p = float(row["Close"])
+                                    high_p = float(row["High"])
+                                    low_p = float(row["Low"])
+
+                                    body = abs(open_p - close_p)
+                                    lower_wick = min(open_p, close_p) - low_p
+                                    total_range = high_p - low_p
+
+                                    # Absorption Logic
+                                    if (
+                                        total_range > 0
+                                        and lower_wick > body
+                                        and (lower_wick / total_range) >= 0.4
+                                    ):
+                                        accumulation_found = True
+                                        entry_date = date.strftime("%d %b %Y")
+                                        break
+
+                                if accumulation_found:
+                                    symbol_clean = stock.replace(".NS", "")
+                                    tv_link = f"https://in.tradingview.com/chart/?symbol=NSE:{symbol_clean}"
+                                    current_close = float(data["Close"].iloc[-1])
+
+                                    results.append(
+                                        {
+                                            "Stock": symbol_clean,
+                                            "Entry Date": entry_date,
+                                            "Current Price": round(
+                                                current_close, 2
+                                            ),
+                                            "RSI": round(latest_rsi, 2),
+                                            "Open in TradingView": tv_link,
+                                        }
+                                    )
+                    except Exception as e:
+                        pass
+
+                progress_bar.empty()
+
+                if len(results) > 0:
+                    df = pd.DataFrame(results)
+                    st.dataframe(
+                        df,
+                        column_config={
+                            "Open in TradingView": st.column_config.LinkColumn(
+                                "Open in TradingView",
+                                display_text="View Chart 📈",
+                            )
+                        },
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                else:
+                    st.info(
+                        "Koi fresh RSI < 35 breakdown aur recent accumulation nahi mili."
+                    )
+
+# ---------------- TAB 2: MANUAL CHECK (Last 5 Days) ----------------
+with tab2:
+    user_input = st.text_input("Stock Name (e.g. INFY, HDFCBANK)", "")
+
+    if st.button("Check Stock 🕵️‍♂️"):
+        if user_input.strip() == "":
+            st.warning("Pehle kisi stock ka naam likhein.")
+        else:
+            with st.spinner("Analyzing recent activity..."):
+                try:
+                    stock_name = user_input.strip().upper()
+                    if not stock_name.endswith(".NS"):
+                        stock_name += ".NS"
+
+                    data = yf.download(stock_name, period="30d", progress=False)
+                    if isinstance(data.columns, pd.MultiIndex):
+                        data.columns = data.columns.get_level_values(0)
+
+                    if len(data) >= 20:
+                        data["Avg_Vol_20"] = (
+                            data["Volume"].rolling(window=20).mean()
+                        )
+
+                        last_5_days = data.tail(5)
+                        activity = []
+
+                        for date, row in last_5_days.iterrows():
+                            open_p = float(row["Open"])
+                            close_p = float(row["Close"])
+                            high_p = float(row["High"])
+                            low_p = float(row["Low"])
+                            vol = float(row["Volume"])
+                            avg_vol = float(row["Avg_Vol_20"])
+
+                            body = abs(open_p - close_p)
+                            lower_wick = min(open_p, close_p) - low_p
+                            total_range = high_p - low_p
+                            vol_spike = vol / avg_vol if avg_vol > 0 else 0
+                            is_green = close_p > open_p
+
+                            setup = ""
+
+                            if (
+                                total_range > 0
+                                and lower_wick > body
+                                and (lower_wick / total_range) >= 0.4
+                            ):
+                                setup = "Absorption (Stealth) 🟢"
+                            elif is_green and vol_spike >= 1.5:
+                                setup = "Aggressive Buy 🚀"
+
+                            if setup != "":
+                                activity.append(
+                                    {
+                                        "Date": date.strftime("%d %b %Y"),
+                                        "Setup Type": setup,
+                                        "Closing Price": round(close_p, 2),
+                                        "Volume Spike": f"{round(vol_spike, 1)}x",
+                                    }
+                                )
+
+                        if len(activity) > 0:
+                            st.success(
+                                f"Activity Found for {stock_name.replace('.NS', '')}"
+                            )
+                            st.dataframe(
+                                pd.DataFrame(activity),
+                                use_container_width=True,
+                                hide_index=True,
+                            )
+                        else:
+                            st.info(
+                                f"Pichle 5 dino mein koi special activity nahi mili."
+                            )
+                    else:
+                        st.error("Data nahi mila. Sahi naam type karein.")
+                except Exception as e:
+                    st.error("Kuch technical error aaya. Sahi naam check karein.")
