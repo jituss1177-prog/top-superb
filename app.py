@@ -43,7 +43,7 @@ with tab1:
     
     col_bull, col_sweet, col_bear = st.columns(3)
     with col_bull:
-        st.subheader("🟢 Top 10 Bullish")
+        st.subheader("🟢 Top 5 Bullish")
     with col_sweet:
         st.subheader("🎯 Sweet Spot (1%-2.5%)")
     with col_bear:
