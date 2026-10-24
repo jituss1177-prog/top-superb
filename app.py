@@ -40,6 +40,7 @@ tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner"
 # ==========================================
 with tab1:
     st.title("📊 5-Min Volume Contraction")
+    st.markdown("*(Note: Stocks with price below ₹200 are automatically excluded)*")
     
     col_bull, col_sweet, col_bear = st.columns(3)
     with col_bull:
@@ -86,6 +87,10 @@ with tab1:
                                     day_open = stk_o.iloc[0] 
                                     curr_close = stk_c.iloc[-1]
                                     
+                                    # PRICE FILTER: Skip if price is less than 200
+                                    if curr_close < 200:
+                                        continue
+                                    
                                     pct_change = ((curr_close - day_open) / day_open) * 100
                                     
                                     movers_list.append({
@@ -108,13 +113,9 @@ with tab1:
             if movers_list:
                 movers_list.sort(key=lambda x: x['Change'], reverse=True)
                 
-                # Column 1: Sabse zyada bhagne wale (Top 10 Overall)
                 bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:10]
-                
-                # Column 2: Sweet Spot (Sirf 1.0% se 2.5% ke beech)
                 sweet_list = [s.copy() for s in movers_list if 1.0 <= s['Change'] <= 2.5][:10]
                 
-                # Column 3: Sabse zyada girne wale
                 bearish_list = [s.copy() for s in movers_list if s['Change'] < 0]
                 bearish_list.sort(key=lambda x: x['Change']) 
                 bearish_list = bearish_list[:10]
@@ -136,7 +137,7 @@ with tab1:
                     if sweet_list:
                         st.dataframe(pd.DataFrame(sweet_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
                     else:
-                        st.write("No stocks in 1-2% range.")
+                        st.write("No stocks in 1-2.5% range.")
                         
                 with col_bear:
                     if bearish_list:
@@ -149,6 +150,8 @@ with tab1:
 # ==========================================
 with tab2:
     st.title("🏹 90D Support Scanner")
+    st.markdown("*(Note: Stocks with price below ₹200 are automatically excluded)*")
+    
     col1, col2 = st.columns([1, 2])
     with col1:
         auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
@@ -191,15 +194,19 @@ with tab2:
                                     stock_low = lows_daily.dropna()
                                 else:
                                     stock_low = lows_daily[yf_sym].dropna() if yf_sym in lows_daily.columns else None
-                                        
-                                if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
                                     
+                                if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
+                                    curr_close = stock_close.iloc[-1]
+                                    
+                                    # PRICE FILTER: Skip if price is less than 200
+                                    if curr_close < 200:
+                                        continue
+                                        
                                     support_90d = stock_low[:-1].min()
                                     rsi_series = calculate_rsi(stock_close, window=22).dropna()
                                     
                                     if len(rsi_series) >= 2 and support_90d > 0:
                                         curr_rsi = rsi_series.iloc[-1]
-                                        curr_close = stock_close.iloc[-1]
                                         dist_pct = ((curr_close - support_90d) / support_90d) * 100
                                         
                                         if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
@@ -226,7 +233,7 @@ with tab2:
                     hide_index=True
                 )
             else:
-                st.write("No results.")
+                st.write("No results matching criteria (Price >= ₹200).")
                 
             if auto_run and is_market_live:
                 time.sleep(900) 
