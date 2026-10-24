@@ -1,285 +1,114 @@
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import os
-import time
-from datetime import datetime, timedelta, timezone
+//@version=6
+strategy("Brahmaastra VCP + 90D S&R", overlay=true, max_lines_count=100, max_labels_count=100, initial_capital=100000, default_qty_type=strategy.fixed, default_qty_value=1)
 
-st.set_page_config(page_title="Brahmaastra Terminal", layout="wide")
+// ==========================================
+// ⚙️ VCP SETTINGS 
+// ==========================================
+target_points = input.float(30.0, title="🎯 VCP Target Points (Rs)")
+sl_buffer     = input.float(2.0, title="🛑 VCP SL Buffer (Rs)")
 
-file_path = "Trading_Symbols_Chartink.txt"
+// ==========================================
+// 🚀 VCP 5-MIN INTRADAY ENGINE
+// ==========================================
+// Time Filter
+h = hour(time, "Asia/Kolkata")
+m = minute(time, "Asia/Kolkata")
+current_time = h * 100 + m
+in_session = (current_time >= 930) and (current_time <= 1100)
 
-# Engine (Hidden Logic for Support Scanner)
-def calculate_rsi(series, window=22):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    avg_gain = gain.ewm(alpha=1/window, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/window, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+// Daily Reset & Trade Counter
+var float vcp_day_open = na
+var int trades_today = 0
 
-def get_symbols():
-    if os.path.exists(file_path):
-        with open(file_path, "r") as f:
-            return [line.strip() for line in f.readlines() if line.strip()]
-    return []
+if session.isfirstbar_regular
+    vcp_day_open := open
+    trades_today := 0
 
-ist = timezone(timedelta(hours=5, minutes=30))
-now = datetime.now(ist)
-is_weekday = now.weekday() < 5
-market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
-market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
-is_market_live = is_weekday and market_open <= now <= market_close
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    trades_today += 1
 
-# --- TABS CREATION ---
-tab1, tab2, tab3 = st.tabs(["📊 5-Min VCP Scanner", "🏹 90D Support Scanner", "💰 Dividend Tracker"])
+can_trade = (trades_today == 0) and (strategy.position_size == 0)
 
-# ==========================================
-# TAB 1: 5-MIN TOP MOVERS (3 Columns)
-# ==========================================
-with tab1:
-    st.title("📊 5-Min Volume Contraction")
-    st.markdown("*(Note: Stocks with price below ₹200 are automatically excluded)*")
-    
-    col_bull, col_sweet, col_bear = st.columns(3)
-    with col_bull:
-        st.subheader("🟢 Top 10 Bullish")
-    with col_sweet:
-        st.subheader("🎯 Sweet Spot (1%-2.5%)")
-    with col_bear:
-        st.subheader("🔴 Top 10 Bearish")
+// Trend & Candle Logic
+vcp_bull_trend = close > vcp_day_open
+vcp_bear_trend = close < vcp_day_open
+
+vcp_red = close < open
+vcp_green = close > open
+
+bull_setup = vcp_bull_trend and vcp_red and vcp_red[1] and (volume < volume[1]) and in_session and can_trade
+bear_setup = vcp_bear_trend and vcp_green and vcp_green[1] and (volume < volume[1]) and in_session and can_trade
+
+var float ep = na
+var float sl = na
+var float tp = na
+
+if bull_setup
+    ep := high
+    sl := low - sl_buffer
+    tp := ep + target_points
+    strategy.entry("Buy", strategy.long, stop=ep)
+    strategy.exit("Exit Buy", "Buy", stop=sl, limit=tp)
+
+if bear_setup
+    ep := low
+    sl := high + sl_buffer
+    tp := ep - target_points
+    strategy.entry("Sell", strategy.short, stop=ep)
+    strategy.exit("Exit Sell", "Sell", stop=sl, limit=tp)
+
+if not in_session and strategy.position_size == 0
+    strategy.cancel_all()
+
+plotshape(bull_setup, title="VCP Bullish Entry", text="BUY", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small)
+plotshape(bear_setup, title="VCP Bearish Entry", text="SELL", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small)
+
+
+// ==========================================
+// 🧱 90-DAY SUPPORT & RESISTANCE ENGINE
+// ==========================================
+// Daily time frame par pichle 90 din ka High aur Low nikalna
+get_90d_snr() =>
+    res = ta.highest(high[1], 90)
+    sup = ta.lowest(low[1], 90)
+    [res, sup]
+
+[res_90d, sup_90d] = request.security(syminfo.tickerid, "D", get_90d_snr(), lookahead = barmerge.lookahead_off)
+
+// Chart par S&R Lines aur Labels plot karna
+var line line_res = na
+var line line_sup = na
+var label lbl_res = na
+var label lbl_sup = na
+
+if barstate.islast
+    if not na(line_res)
+        line.delete(line_res)
+    if not na(lbl_res)
+        label.delete(lbl_res)
         
-    if st.button("Start 5-Min Scan 🚀"):
-        symbols = get_symbols()
-        if symbols:
-            status = st.empty()
-            status.info("Scanning Data... (Please wait)")
-            prog_bar_vcp = st.progress(0)
-            
-            movers_list = []
-            
-            chunk_size = 40
-            for i in range(0, len(symbols), chunk_size):
-                chunk_syms = symbols[i:i+chunk_size]
-                yf_symbols = [sym + ".NS" for sym in chunk_syms]
-                
-                try:
-                    data_5m = yf.download(yf_symbols, interval='5m', period='1d', progress=False, threads=False)
-                    
-                    if not data_5m.empty:
-                        closes = data_5m['Close']
-                        opens = data_5m['Open']
-                        
-                        for symbol in chunk_syms:
-                            yf_sym = symbol + ".NS"
-                            try:
-                                if isinstance(closes, pd.Series):
-                                    stk_c, stk_o = closes.dropna(), opens.dropna()
-                                else:
-                                    if yf_sym in closes.columns:
-                                        stk_c = closes[yf_sym].dropna()
-                                        stk_o = opens[yf_sym].dropna()
-                                    else:
-                                        continue
-                                        
-                                if len(stk_c) >= 1:
-                                    day_open = stk_o.iloc[0] 
-                                    curr_close = stk_c.iloc[-1]
-                                    
-                                    # PRICE FILTER: Skip if price is less than 200
-                                    if curr_close < 200:
-                                        continue
-                                    
-                                    pct_change = ((curr_close - day_open) / day_open) * 100
-                                    
-                                    movers_list.append({
-                                        "Stock": symbol,
-                                        "Price": round(curr_close, 2),
-                                        "Change": pct_change,
-                                        "Link": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
-                                    })
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-                    
-                prog_bar_vcp.progress(min((i + chunk_size) / len(symbols), 1.0))
-            
-            status.empty()
-            prog_bar_vcp.empty()
-            
-            # Top 10 Sorting Logic for 3 Columns
-            if movers_list:
-                movers_list.sort(key=lambda x: x['Change'], reverse=True)
-                
-                bullish_list = [s.copy() for s in movers_list if s['Change'] > 0][:10]
-                sweet_list = [s.copy() for s in movers_list if 1.0 <= s['Change'] <= 2.5][:10]
-                
-                bearish_list = [s.copy() for s in movers_list if s['Change'] < 0]
-                bearish_list.sort(key=lambda x: x['Change']) 
-                bearish_list = bearish_list[:10]
-                
-                for b in bullish_list:
-                    b['Change'] = f"+{b['Change']:.2f}%"
-                for b in sweet_list:
-                    b['Change'] = f"+{b['Change']:.2f}%"
-                for b in bearish_list:
-                    b['Change'] = f"{b['Change']:.2f}%"
-                
-                with col_bull:
-                    if bullish_list:
-                        st.dataframe(pd.DataFrame(bullish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
-                    else:
-                        st.write("No Bullish stocks found today.")
-                        
-                with col_sweet:
-                    if sweet_list:
-                        st.dataframe(pd.DataFrame(sweet_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
-                    else:
-                        st.write("No stocks in 1-2.5% range.")
-                        
-                with col_bear:
-                    if bearish_list:
-                        st.dataframe(pd.DataFrame(bearish_list), column_config={"Link": st.column_config.LinkColumn("View")}, hide_index=True)
-                    else:
-                        st.write("No Bearish stocks found today.")
+    line_res := line.new(bar_index - 1, res_90d, bar_index, res_90d, color=color.rgb(239, 83, 80), width=2, style=line.style_solid, extend=extend.both)
+    lbl_res  := label.new(bar_index + 4, res_90d, "90D RESISTANCE: " + str.tostring(res_90d, "#.##"), color=color.rgb(239, 83, 80), textcolor=color.white, style=label.style_label_left, size=size.small)
 
-# ==========================================
-# TAB 2: MAIN SECRET SCANNER (90D Support)
-# ==========================================
-with tab2:
-    st.title("🏹 90D Support Scanner")
-    st.markdown("*(Note: Stocks with price below ₹200 are automatically excluded)*")
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        auto_run = st.toggle("Auto-Scan", disabled=not is_market_live)
-    with col2:
-        manual_run = st.button("Scan Now 🎯")
-
-    if auto_run or manual_run:
-        symbols = get_symbols()
+    if not na(line_sup)
+        line.delete(line_sup)
+    if not na(lbl_sup)
+        label.delete(lbl_sup)
         
-        if symbols:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            matched_stocks = []
-            chunk_size = 50
-            
-            for i in range(0, len(symbols), chunk_size):
-                chunk_syms = symbols[i:i+chunk_size]
-                yf_symbols = [sym + ".NS" for sym in chunk_syms]
-                
-                status_text.markdown("Loading...")
-                
-                try:
-                    data_30m = yf.download(yf_symbols, interval='30m', period='1mo', progress=False, threads=False)
-                    data_daily = yf.download(yf_symbols, interval='1d', period='3mo', progress=False, threads=False)
-                    
-                    if not data_30m.empty and not data_daily.empty:
-                        closes_30m = data_30m['Close']
-                        lows_daily = data_daily['Low']
-                        
-                        for symbol in chunk_syms:
-                            yf_sym = symbol + ".NS"
-                            try:
-                                if isinstance(closes_30m, pd.Series):
-                                    stock_close = closes_30m.dropna()
-                                else:
-                                    stock_close = closes_30m[yf_sym].dropna() if yf_sym in closes_30m.columns else None
-                                    
-                                if isinstance(lows_daily, pd.Series):
-                                    stock_low = lows_daily.dropna()
-                                else:
-                                    stock_low = lows_daily[yf_sym].dropna() if yf_sym in lows_daily.columns else None
-                                    
-                                if stock_close is not None and stock_low is not None and len(stock_close) > 22 and len(stock_low) > 10:
-                                    curr_close = stock_close.iloc[-1]
-                                    
-                                    # PRICE FILTER: Skip if price is less than 200
-                                    if curr_close < 200:
-                                        continue
-                                        
-                                    support_90d = stock_low[:-1].min()
-                                    rsi_series = calculate_rsi(stock_close, window=22).dropna()
-                                    
-                                    if len(rsi_series) >= 2 and support_90d > 0:
-                                        curr_rsi = rsi_series.iloc[-1]
-                                        dist_pct = ((curr_close - support_90d) / support_90d) * 100
-                                        
-                                        if curr_rsi < 35 and (0 <= dist_pct <= 3.5):
-                                            matched_stocks.append({
-                                                "Stock": symbol,
-                                                "Current Price": round(curr_close, 2),
-                                                "TradingView": f"https://in.tradingview.com/chart/?symbol=NSE:{symbol}"
-                                            })
-                            except Exception:
-                                pass
-                except Exception as e:
-                    pass
-                
-                current_progress = min((i + chunk_size) / len(symbols), 1.0)
-                progress_bar.progress(current_progress)
-            
-            status_text.empty()
-            progress_bar.empty()
-            
-            if matched_stocks:
-                st.data_editor(
-                    pd.DataFrame(matched_stocks),
-                    column_config={"TradingView": st.column_config.LinkColumn("Open in TradingView")},
-                    hide_index=True
-                )
-            else:
-                st.write("No results matching criteria (Price >= ₹200).")
-                
-            if auto_run and is_market_live:
-                time.sleep(900) 
-                st.rerun()
+    line_sup := line.new(bar_index - 1, sup_90d, bar_index, sup_90d, color=color.rgb(38, 166, 154), width=2, style=line.style_solid, extend=extend.both)
+    lbl_sup  := label.new(bar_index + 4, sup_90d, "90D SUPPORT: " + str.tostring(sup_90d, "#.##"), color=color.rgb(38, 166, 154), textcolor=color.white, style=label.style_label_left, size=size.small)
 
-# ==========================================
-# TAB 3: SEPARATE DIVIDEND SCANNER
-# ==========================================
-with tab3:
-    st.title("💰 Dividend Tracker")
+
+// ==========================================
+// 📊 SMALL P/L TABLE (Neat & Clean)
+// ==========================================
+var table pl_table = table.new(position.top_right, 2, 4, border_width=1, border_color=color.gray)
+if barstate.islast
+    table.cell(pl_table, 0, 0, "VCP Strategy", bgcolor=color.blue, text_color=color.white)
+    table.cell(pl_table, 1, 0, "Stats", bgcolor=color.blue, text_color=color.white)
     
-    if st.button("Check Dividends"):
-        symbols = get_symbols()
-        if symbols:
-            status_text_div = st.empty()
-            status_text_div.markdown("Processing...")
-            prog_bar_div = st.progress(0)
-            
-            div_matched = []
-            today_date = now.date()
-            
-            for i, symbol in enumerate(symbols):
-                try:
-                    yf_sym = symbol + ".NS"
-                    ticker = yf.Ticker(yf_sym)
-                    ex_div_unix = ticker.info.get('exDividendDate')
-                    
-                    if ex_div_unix:
-                        ex_date = datetime.fromtimestamp(ex_div_unix).date()
-                        
-                        if today_date <= ex_date <= (today_date + timedelta(days=30)):
-                            days_left = (ex_date - today_date).days
-                            div_matched.append({
-                                "Stock": symbol,
-                                "Dividend Date": ex_date.strftime("%d %b %Y"),
-                                "Timeline": f"{days_left} Days Left"
-                            })
-                except:
-                    pass
-                
-                prog_bar_div.progress((i + 1) / len(symbols))
-                
-            prog_bar_div.empty()
-            status_text_div.empty()
-            
-            if div_matched:
-                st.dataframe(pd.DataFrame(div_matched), hide_index=True)
-            else:
-                st.write("No upcoming dividends found.")
+    table.cell(pl_table, 0, 1, "Target Set", bgcolor=color.gray, text_color=color.white)
+    table.cell(pl_table, 1, 1, str.tostring(target_points) + " Pts", bgcolor=color.black, text_color=color.white)
+    
+    table.cell(pl_table, 0, 2, "Net Profit (₹)", bgcolor=color.gray, text_color=color.white)
+    table.cell(pl_table, 1, 2, str.tostring(strategy.netprofit, "#.##"), bgcolor=strategy.netprofit > 0 ? color.green : color.red, text_color=color.white)
